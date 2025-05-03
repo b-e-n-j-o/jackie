@@ -1,0 +1,8 @@
+fastapi[standard]
+requests
+langchain-openai
+langchain-core
+openai
+tiktoken
+python-dotenv
+supabase
