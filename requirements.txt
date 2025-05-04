@@ -5,4 +5,4 @@ langchain-core
 openai
 tiktoken
 python-dotenv
-supabase
+supabase-py

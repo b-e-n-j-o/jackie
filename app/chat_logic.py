@@ -19,7 +19,8 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 # Import depuis notre app
-from app.supabase_client import supabase
+from supabase import create_client, Client
+from dotenv import load_dotenv
 
 from pydantic.v1 import BaseModel, Field
 
@@ -64,6 +65,16 @@ client = AzureOpenAI(
     api_version="2025-01-01-preview",
     azure_endpoint=AZURE_OPENAI_ENDPOINT
 )
+
+load_dotenv()
+
+SUPABASE_URL = os.getenv("SUPABASE_URL_DEV")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY_DEV")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise ValueError("Variables d'environnement SUPABASE_URL et SUPABASE_KEY requises")
+
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 class SupabaseMessageHistory(BaseChatMessageHistory):
     """Classe permettant de gérer l'historique des messages avec Supabase"""
