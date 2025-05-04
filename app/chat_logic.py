@@ -8,6 +8,7 @@ import requests
 import traceback
 from datetime import datetime, timedelta
 from typing import Dict, Optional, List, Any
+from dotenv import load_dotenv
 
 # Import OpenAI directement
 from openai import AzureOpenAI
@@ -20,9 +21,11 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 # Import depuis notre app
 from supabase import create_client, Client
-from dotenv import load_dotenv
 
 from pydantic.v1 import BaseModel, Field
+
+
+load_dotenv()
 
 # Configuration du logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
