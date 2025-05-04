@@ -353,7 +353,7 @@ def get_user_id(phone_number: str) -> Optional[str]:
         logging.info(f"Recherche de l'utilisateur avec le numéro original: {phone_number}")
         
         # Nettoyage du numéro - plusieurs formats possibles
-        clean_number = phone_number.replace('whatsapp:', '')
+        clean_number = phone_number.replace('whatsapp:', '').strip()
         if not clean_number.startswith('+'):
             clean_number = '+' + clean_number
             
@@ -576,7 +576,7 @@ def make_vapi_outbound_call(phone_number: str, user_context: dict) -> dict:
     """Initie un appel sortant via VAPI"""
     try:
         global last_vapi_call_info
-        clean_number = phone_number.replace('whatsapp:', '')
+        clean_number = phone_number.replace('whatsapp:', '').strip()
         if not clean_number.startswith('+'):
             clean_number = '+' + clean_number
             
@@ -980,10 +980,15 @@ async def handle_user_message(phone_number: str, message: str) -> str:
             # Création d'une nouvelle session
             session_id = f"{user_id}_{int(time.time())}"
             try:
+                # Nettoyage du numéro avant stockage
+                clean_number = phone_number.replace('whatsapp:', '').strip()
+                if not clean_number.startswith('+'):
+                    clean_number = '+' + clean_number
+
                 session_data = {
                     "id": session_id,
                     "user_id": user_id,
-                    "phone_number": phone_number,
+                    "phone_number": clean_number,
                     "start_time": datetime.now().isoformat(),
                     "last_activity": datetime.now().isoformat(),
                     "status": "active",

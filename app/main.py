@@ -157,3 +157,21 @@ def monitor_active_sessions():
         "count": len(active_sessions),
         "sessions": active_sessions
     } 
+
+@app.get("/monitor/incoming-messages")
+def monitor_incoming_messages():
+    # Liste des requêtes récentes
+    recent_requests = []
+    
+    for phone, timestamps in RATE_LIMIT.items():
+        if timestamps:
+            recent_requests.append({
+                "phone_number": phone,
+                "timestamp": timestamps[-1].isoformat() if timestamps else None,
+                "count_last_hour": len(timestamps)
+            })
+    
+    return {
+        "count": len(recent_requests),
+        "requests": recent_requests
+    }
