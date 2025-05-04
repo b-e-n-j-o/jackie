@@ -8,6 +8,8 @@ from typing import Dict
 from datetime import datetime, timedelta
 from langchain_core.messages import HumanMessage
 
+# Variable globale pour stocker la dernière requête Twilio
+LAST_TWILIO_REQUEST = None
 
 app = FastAPI(
     title="Jackie API",
@@ -41,10 +43,25 @@ def check_rate_limit(phone_number: str):
 
 @app.post("/webhook/twilio")
 async def twilio_webhook(
-    From: str = Form(...),  # Twilio envoie "From" avec le numéro
-    Body: str = Form(...),  # Twilio envoie "Body" avec le message
+    request: Request,
+    From: str = Form(...),
+    Body: str = Form(...),
 ):
     try:
+        # Récupérer TOUTES les données brutes
+        form_data = await request.form()
+        headers = dict(request.headers)
+        
+        # Stocker ces données pour diagnostic
+        global LAST_TWILIO_REQUEST
+        LAST_TWILIO_REQUEST = {
+            "timestamp": datetime.now().isoformat(),
+            "headers": headers,
+            "form_data": {k: v for k, v in form_data.items()},
+            "raw_from": form_data.get("From", "Non trouvé"),
+            "raw_body": form_data.get("Body", "Non trouvé")
+        }
+        
         # Nettoyage du numéro de téléphone
         phone_number = From.replace('whatsapp:', '')
         
@@ -174,4 +191,10 @@ def monitor_incoming_messages():
     return {
         "count": len(recent_requests),
         "requests": recent_requests
+    }
+
+@app.get("/monitor/twilio-debug")
+def monitor_twilio_debug():
+    return {
+        "last_request": LAST_TWILIO_REQUEST if LAST_TWILIO_REQUEST is not None else "Aucune requête reçue"
     }
