@@ -350,9 +350,16 @@ def get_active_session_id(user_id: str, phone_number: str = None) -> Optional[st
 def get_user_id(phone_number: str) -> Optional[str]:
     """Récupère l'ID utilisateur à partir du numéro de téléphone"""
     try:
-        logging.info(f"Recherche de l'utilisateur avec le numéro: {phone_number}")
-        clean_number = phone_number.replace('whatsapp:', '')
+        logging.info(f"Recherche de l'utilisateur avec le numéro original: {phone_number}")
         
+        # Nettoyage du numéro - plusieurs formats possibles
+        clean_number = phone_number.replace('whatsapp:', '')
+        if not clean_number.startswith('+'):
+            clean_number = '+' + clean_number
+            
+        logging.info(f"Numéro nettoyé: {clean_number}")
+        
+        # Essai avec le numéro nettoyé
         user_query = supabase.table('users') \
             .select('id') \
             .eq('phone_number', clean_number) \
@@ -362,6 +369,22 @@ def get_user_id(phone_number: str) -> Optional[str]:
             user_id = user_query.data[0]['id']
             logging.info(f"Utilisateur trouvé avec l'ID: {user_id}")
             return user_id
+            
+        # Si pas de résultat, essayer sans le '+'
+        if clean_number.startswith('+'):
+            alt_number = clean_number[1:]
+            logging.info(f"Essai avec numéro alternatif: {alt_number}")
+            
+            user_query = supabase.table('users') \
+                .select('id') \
+                .eq('phone_number', alt_number) \
+                .execute()
+                
+            if user_query.data and len(user_query.data) > 0:
+                user_id = user_query.data[0]['id']
+                logging.info(f"Utilisateur trouvé avec l'ID: {user_id}")
+                return user_id
+                
         logging.warning(f"Aucun utilisateur trouvé pour le numéro: {phone_number}")
         return None
     except Exception as e:
@@ -793,7 +816,10 @@ The conversations you have help build the person's profile, which will then help
 - If the person shares a difficulty, don't rush toward solutions
 - Acknowledge their emotions before offering perspectives
 - Remain positive without denying the complexity of shared situations
-- If you don't understand something, don't hesitate to ask for clarification"""
+- If you don't understand something, don't hesitate to ask for clarification
+
+If the subject is about finding a good match for the user, you work that way : you will search in your circle of contacts for a person that matches the profile of the user and get backto the user once you found someone.
+"""
         
         # Extraction des informations du profil
         profile = user_context.get('personal_profile', {})
