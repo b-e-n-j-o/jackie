@@ -14,6 +14,8 @@ import sys
 import time
 import threading
 
+from chat_logic import process_message
+
 # Configuration du logging
 logging.basicConfig(
     level=logging.INFO,
@@ -276,7 +278,6 @@ async def whatsapp_webhook(request: Request):
         logger.info(f"Session récupérée/créée: {session_data.get('session_id', 'No ID')}")
         
         # Traiter le message avec chat_logic
-        from chat_logic import process_message
         process_result = await process_message(session_data, user_message, user_number)
         
         if not process_result["success"]:

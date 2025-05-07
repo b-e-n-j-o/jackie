@@ -1427,3 +1427,9 @@ def check_expired_sessions():
         logging.info(f"{sessions_closed} sessions fermées automatiquement")
     except Exception as e:
         logging.error(f"Erreur lors de la vérification des sessions: {str(e)}")
+
+
+
+# Test pour git add
+
+
