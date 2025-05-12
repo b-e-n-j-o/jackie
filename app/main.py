@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 import redis
 
 # Import des fonctions du module chat_logic
-from chat import (
+from app.chat import  (
     process_message, get_user_id, close_session, 
     send_whatsapp_message, last_vapi_call_info
 )
@@ -28,7 +28,7 @@ app = FastAPI()
 REDIS_HOST = os.getenv("REDIS_HOST")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6380))
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD")
-REDIS_TTL = int(os.getenv("REDIS_TTL", 1800))  # 30 minutes par défaut
+REDIS_TTL = int(os.getenv("REDIS_TTL", 30))  # 30 secondes par défaut
 
 # Connexion Redis
 try:
