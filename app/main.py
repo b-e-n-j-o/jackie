@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 import redis
 
 # Import des fonctions du module chat_logic
-from app.chat import (
+from chat import (
     process_message, get_user_id, close_session, 
     send_whatsapp_message, last_vapi_call_info
 )
