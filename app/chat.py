@@ -274,6 +274,17 @@ def make_vapi_outbound_call(phone_number: str, user_context: dict) -> dict:
         logger.info(f"Nom: '{name}'")
         logger.info(f"Bio (longueur): {len(bio)}")
         
+        # Récupérer onboarding_completed depuis la table users
+        user_query = supabase.table('users') \
+            .select('onboarding_completed') \
+            .eq('phone_number', clean_number) \
+            .execute()
+            
+        onboarding_completed = False
+        if user_query.data and len(user_query.data) > 0:
+            onboarding_completed = user_query.data[0].get('onboarding_completed', False)
+            logger.info(f"Statut onboarding: {onboarding_completed}")
+        
         # Log de la clé API VAPI (masquée)
         vapi_key = VAPI_API_KEY
         masked_key = vapi_key[:4] + '*' * (len(vapi_key) - 8) + vapi_key[-4:] if vapi_key else "Non définie"
@@ -290,7 +301,8 @@ def make_vapi_outbound_call(phone_number: str, user_context: dict) -> dict:
                 "variableValues": {
                     "name": name,
                     "bio": bio,
-                    "is_returning": True
+                    "is_returning": True,
+                    "onboarding_completed": onboarding_completed
                 }
             }
         }
@@ -316,6 +328,7 @@ def make_vapi_outbound_call(phone_number: str, user_context: dict) -> dict:
             "name": name,
             "bio_preview": bio[:200] + "..." if len(bio) > 200 else bio,
             "bio_length": len(bio),
+            "onboarding_completed": onboarding_completed,
             "status_code": response.status_code,
             "response": response.json() if response.status_code == 200 else response.text,
             "vapi_key_used": masked_key
@@ -737,7 +750,7 @@ async def process_message(session_data: dict, message: str, phone_number: str, r
             # Update Redis if available
             if redis_client:
                 session_key = f"session:{phone_number}"
-                redis_client.setex(session_key, 1800, json.dumps(session_data))
+                redis_client.setex(session_key, 60, json.dumps(session_data))
             
             # Update database
             try:
@@ -791,7 +804,7 @@ async def process_message(session_data: dict, message: str, phone_number: str, r
         # Update Redis if available
         if redis_client:
             session_key = f"session:{phone_number}"
-            redis_client.setex(session_key, 1800, json.dumps(session_data))
+            redis_client.setex(session_key, 60, json.dumps(session_data))
         
         # Update database
         try:
