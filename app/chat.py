@@ -624,10 +624,24 @@ def close_session(session_id: str, redis_client=None):
         if messages and len(messages) > 0:
             azure_function_url = os.getenv("PROFILE_UPDATER_URL", "https://func-profile-updater-jackie.azurewebsites.net/api/session-profile-updater")
             
+            # Transformer le format des messages pour le profile updater
+            formatted_messages = []
+            for msg in messages:
+                if msg.get('role') == 'user':
+                    formatted_messages.append({
+                        "type": "HumanMessage",
+                        "content": msg.get('content', '')
+                    })
+                elif msg.get('role') == 'assistant':
+                    formatted_messages.append({
+                        "type": "AIMessage",
+                        "content": msg.get('content', '')
+                    })
+            
             profile_update_data = {
                 "phone_number": phone_number,
                 "session_id": session_id,
-                "session_messages": messages
+                "session_messages": formatted_messages
             }
             
             try:
