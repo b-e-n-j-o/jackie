@@ -372,6 +372,7 @@ def generate_call_confirmation_message(user_name: str, user_context: dict) -> st
         
         Keep the message short 1-2 sentences and make it feel like a natural text message.
         The message should be in English.
+        Don't use emojis, don't use bold font, don't use hashtags
         Never bullet points, or use Bold font -> type you're 25 years old person texting a friend """
 
         context_prompt = f"""
@@ -418,7 +419,7 @@ Getting to know the people you chat with, matching their tone, and creating a sp
 - Avoid robotic or repetitive phrases
 - Adapt naturally to the flow of conversation
 - Systematically vary your response structure
-- Use emojis in moderation to enhance your message 🙂
+- Don't use emojis, don't use bold font, don't use hashtags
 - Keep messages of variable length but generally concise, as a friend would on WhatsApp
 
 # CONVERSATIONAL OBJECTIVES
