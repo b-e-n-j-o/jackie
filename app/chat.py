@@ -204,6 +204,65 @@ def detect_call_intention(message: str) -> float:
         logger.error(f"Erreur lors de la détection d'intention d'appel: {str(e)}")
         return 0
 
+def detect_intro_request_intention(message: str) -> float:
+    """Détecte si l'utilisateur souhaite recevoir une introduction/match"""
+    try:
+        logging.info(f"Analyse d'intention d'introduction pour: '{message}'")
+        
+        system_prompt = """
+        Tu es un assistant intelligent qui analyse les messages des utilisateurs.
+        Ta tâche est de déterminer si un message exprime le souhait de recevoir une introduction ou un match avec une autre personne.
+        
+        Réponds uniquement par un nombre entre 0 et 1 où:
+        - 0 signifie que le message ne contient aucune intention d'introduction
+        - 1 signifie que le message exprime clairement une demande d'introduction/match
+        
+        Mots-clés indicatifs: "match", "présenter", "rencontrer", "quelqu'un", "introduction", 
+        "recommandation", "ami", "personne", "connecter", "mettre en relation", etc.
+        
+        Exemples:
+        - "Peux-tu me présenter quelqu'un ?" → 1
+        - "J'aimerais rencontrer quelqu'un d'intéressant" → 0.9
+        - "Est-ce que tu as des recommandations de personnes ?" → 0.8
+        - "Comment ça va ?" → 0
+        - "Je cherche un match" → 1
+        """
+        
+        response = client.chat.completions.create(
+            model=AZURE_OPENAI_DEPLOYMENT_NAME,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": message}
+            ],
+            temperature=0.3,
+            max_tokens=50
+        )
+        
+        raw_response = response.choices[0].message.content
+        logging.info(f"Réponse brute d'analyse d'intention d'intro: '{raw_response}'")
+        
+        # Extraction du score
+        import re
+        match = re.search(r'(\d+(\.\d+)?)', raw_response)
+        if match:
+            intention_score = float(match.group(1))
+            intention_score = max(0, min(1, intention_score))
+            logging.info(f"Score d'intention d'introduction: {intention_score}")
+            return intention_score
+        else:
+            try:
+                intention_score = float(raw_response)
+                intention_score = max(0, min(1, intention_score))
+                logging.info(f"Score d'intention d'introduction converti: {intention_score}")
+                return intention_score
+            except ValueError:
+                logging.error(f"Impossible d'extraire un score d'intention d'intro de: '{raw_response}'")
+                return 0
+            
+    except Exception as e:
+        logging.error(f"Erreur lors de la détection d'intention d'introduction: {str(e)}")
+        return 0
+
 def get_user_context_for_call(phone_number: str) -> dict:
     """Récupère le contexte utilisateur pour un appel vocal"""
     try:
@@ -732,6 +791,10 @@ async def process_message(session_data: dict, message: str, phone_number: str, r
         call_intention_score = detect_call_intention(message)
         logger.info(f"Call intention score: {call_intention_score}")
         
+        # Check for intro request intention
+        intro_intention_score = detect_intro_request_intention(message)
+        logger.info(f"Intro request intention score: {intro_intention_score}")
+        
         if call_intention_score > 0.8:
             # Handle call intention
             user_context_for_call = get_user_context_for_call(phone_number)
@@ -790,6 +853,55 @@ async def process_message(session_data: dict, message: str, phone_number: str, r
                 "call_initiated": True
             }
         
+        elif intro_intention_score > 0.7:  # Nouveau: Gestion des demandes d'introduction
+            # Handle intro request
+            user_name = user_context.get('personal_profile', {}).get('name', "").split()[0] if user_context.get('personal_profile', {}).get('name') else ""
+            confirmation_message = handle_intro_request(user_id, phone_number, user_name)
+            
+            # Store messages
+            store_message(user_id, phone_number, message, 'incoming')
+            store_message(user_id, phone_number, confirmation_message, 'outgoing')
+            
+            # Add messages to session history
+            if "messages" not in session_data:
+                session_data["messages"] = []
+                
+            session_data["messages"].append({
+                "role": "user",
+                "content": message,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+            
+            session_data["messages"].append({
+                "role": "assistant",
+                "content": confirmation_message,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+            
+            # Update last activity
+            session_data["last_activity"] = datetime.now(timezone.utc).isoformat()
+            
+            # Update Redis if available
+            if redis_client:
+                session_key = f"session:{phone_number}"
+                redis_client.setex(session_key, 60, json.dumps(session_data))
+            
+            # Update database
+            try:
+                supabase.table('sessions').update({
+                    "last_activity": session_data["last_activity"],
+                    "messages": json.dumps(session_data["messages"])
+                }).eq("id", session_id).execute()
+            except Exception as e:
+                logger.error(f"Error updating session in database: {str(e)}")
+            
+            return {
+                "success": True,
+                "response": confirmation_message,
+                "session_data": session_data,
+                "intro_requested": True
+            }
+        
         # Process normal message
         response = process_message_with_context(message, user_context, phone_number)
         
@@ -844,3 +956,79 @@ async def process_message(session_data: dict, message: str, phone_number: str, r
             "response": "Sorry, an error occurred while processing your message.",
             "session_data": session_data
         }
+
+def handle_intro_request(user_id: str, phone_number: str, user_name: str = "") -> str:
+    """Traite une demande d'introduction en déclenchant le matching et l'introduction"""
+    try:
+        logging.info(f"[INTRO_REQUEST] Début du traitement pour user {user_id}")
+        
+        # Message de confirmation immédiat
+        confirmation_msg = f"Parfait{' ' + user_name if user_name else ''} ! Laisse-moi te trouver quelqu'un d'intéressant... 🔍"
+        
+        # Déclencher le processus de matching et introduction en arrière-plan
+        import threading
+        thread = threading.Thread(
+            target=trigger_matching_and_intro_for_user,
+            args=(user_id, phone_number, user_name)
+        )
+        thread.start()
+        
+        return confirmation_msg
+        
+    except Exception as e:
+        logging.error(f"[INTRO_REQUEST] Erreur lors du traitement: {str(e)}")
+        return "Désolé, je n'ai pas pu traiter ta demande pour le moment. Peux-tu réessayer ?"
+
+def trigger_matching_and_intro_for_user(user_id: str, phone_number: str, user_name: str = ""):
+    """Déclenche le matching puis l'introduction pour un utilisateur spécifique"""
+    try:
+        logging.info(f"[INTRO_REQUEST] Déclenchement matching pour user {user_id}")
+        
+        # 1. Déclencher le calcul des matchs pour ce user
+        matching_url = os.getenv("MATCHING_FUNCTION_URL", "https://func-matching-calculator.azurewebsites.net/api/trigger-matching")
+        
+        matching_response = requests.post(
+            matching_url, 
+            json={"user_id": user_id},
+            timeout=45
+        )
+        
+        if matching_response.status_code != 200:
+            logging.error(f"[INTRO_REQUEST] Erreur matching: {matching_response.text}")
+            error_msg = "Désolé, je n'ai pas pu calculer tes matchs. Réessaie plus tard !"
+            send_whatsapp_message(phone_number, error_msg)
+            return
+        
+        logging.info(f"[INTRO_REQUEST] Matchs calculés avec succès pour user {user_id}")
+        
+        # 2. Attendre que les matchs soient traités
+        time.sleep(45)  # Augmenté pour laisser le temps au LLM de juger
+        
+        # 3. Déclencher l'introduction (utiliser l'endpoint classique pour l'instant)
+        intro_url = os.getenv("INTRODUCTION_FUNCTION_URL", "https://func-message-generation-jackie.azurewebsites.net/api/generate-introduction")
+        
+        intro_response = requests.post(
+            intro_url,
+            json={"user_id": user_id},
+            timeout=60
+        )
+        
+        if intro_response.status_code == 200:
+            logging.info(f"[INTRO_REQUEST] Introduction envoyée avec succès pour user {user_id}")
+            # Le message d'introduction a été envoyé directement par la fonction
+        else:
+            logging.error(f"[INTRO_REQUEST] Erreur introduction: {intro_response.text}")
+            fallback_msg = f"J'ai trouvé des personnes intéressantes pour toi{' ' + user_name if user_name else ''}, mais je n'arrive pas à t'envoyer l'introduction maintenant. Réessaie dans quelques minutes !"
+            send_whatsapp_message(phone_number, fallback_msg)
+        
+    except Exception as e:
+        logging.error(f"[INTRO_REQUEST] Erreur générale: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
+        # Message d'erreur à l'utilisateur
+        error_msg = f"Désolé{' ' + user_name if user_name else ''}, j'ai rencontré un problème technique. Peux-tu réessayer dans quelques minutes ?"
+        try:
+            send_whatsapp_message(phone_number, error_msg)
+        except:
+            pass
