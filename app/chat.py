@@ -1002,16 +1002,21 @@ def trigger_matching_and_intro_for_user(user_id: str, phone_number: str, user_na
         logging.info(f"[INTRO_REQUEST] Matchs calculés avec succès pour user {user_id}")
         
         # 2. Attendre que les matchs soient traités
-        time.sleep(45)  # Augmenté pour laisser le temps au LLM de juger
+        logging.info(f"[INTRO_REQUEST] Attente de 60 secondes pour le traitement des matchs...")
+        time.sleep(60)  # Augmenté à 60 secondes
         
         # 3. Déclencher l'introduction (utiliser l'endpoint classique pour l'instant)
         intro_url = os.getenv("INTRODUCTION_FUNCTION_URL", "https://func-message-generation-jackie.azurewebsites.net/api") + "/generate-introduction"
+        logging.info(f"[INTRO_REQUEST] Appel de l'API d'introduction: {intro_url}")
         
         intro_response = requests.post(
             intro_url,
             json={"user_id": user_id},
-            timeout=60
+            timeout=90  # Augmenté à 90 secondes
         )
+        
+        logging.info(f"[INTRO_REQUEST] Réponse de l'API d'introduction: {intro_response.status_code}")
+        logging.info(f"[INTRO_REQUEST] Contenu de la réponse: {intro_response.text}")
         
         if intro_response.status_code == 200:
             logging.info(f"[INTRO_REQUEST] Introduction envoyée avec succès pour user {user_id}")
