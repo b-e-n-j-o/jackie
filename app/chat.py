@@ -963,7 +963,7 @@ def handle_intro_request(user_id: str, phone_number: str, user_name: str = "") -
         logging.info(f"[INTRO_REQUEST] Début du traitement pour user {user_id}")
         
         # Message de confirmation immédiat
-        confirmation_msg = f"Parfait{' ' + user_name if user_name else ''} ! Laisse-moi te trouver quelqu'un d'intéressant... 🔍"
+        confirmation_msg = f"Yes{' ' + user_name if user_name else ''} ! Let me find someone for you... 🔍"
         
         # Déclencher le processus de matching et introduction en arrière-plan
         import threading
@@ -1005,7 +1005,7 @@ def trigger_matching_and_intro_for_user(user_id: str, phone_number: str, user_na
         time.sleep(45)  # Augmenté pour laisser le temps au LLM de juger
         
         # 3. Déclencher l'introduction (utiliser l'endpoint classique pour l'instant)
-        intro_url = os.getenv("INTRODUCTION_FUNCTION_URL", "https://func-message-generation-jackie.azurewebsites.net/api/generate-introduction")
+        intro_url = os.getenv("INTRODUCTION_FUNCTION_URL", "https://func-message-generation-jackie.azurewebsites.net/api") + "/generate-introduction"
         
         intro_response = requests.post(
             intro_url,
