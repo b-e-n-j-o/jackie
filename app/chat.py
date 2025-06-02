@@ -166,8 +166,8 @@ def detect_call_intention(message: str) -> float:
         Tu es un assistant intelligent qui analyse les messages des utilisateurs.
         Ta tâche est de déterminer si un message exprime le souhait ou l'intention d'avoir un appel téléphonique.
         Réponds uniquement par un nombre entre 0 et 1 où:
-        - 0 signifie que le message ne contient aucune intention d'appel
-        - 1 signifie que le message exprime clairement une demande d'appel
+        - 0 signifie que le message ne contient aucune intention d'appel, c'est la majeure partie des acs, le message n'evoque pas de volonté d'être appelé
+        - 1 signifie que le message exprime clairement une demande d'appel pour être appelé uniquement, il peut discuter de chose en lien avec un appel passé mais s'il veut êtrre appelé uniquement alors réponds 1
         """
         
         response = client.chat.completions.create(
