@@ -962,6 +962,26 @@ def handle_intro_request(user_id: str, phone_number: str, user_name: str = "") -
     try:
         logging.info(f"[INTRO_REQUEST] Début du traitement pour user {user_id}")
         
+        # Vérifier la disponibilité de l'utilisateur
+        user_check = supabase.table("users") \
+            .select("is_available, next_available_date") \
+            .eq("id", user_id) \
+            .single() \
+            .execute()
+            
+        if not user_check.data:
+            logging.error(f"[INTRO_REQUEST] Utilisateur {user_id} non trouvé")
+            return "Sorry, I couldn't find your profile. Can you try again?"
+            
+        if not user_check.data.get("is_available", True):
+            next_available = user_check.data.get("next_available_date")
+            if next_available:
+                # Extraire juste la date (YYYY-MM-DD)
+                next_date = next_available.split("T")[0]
+                return f"Sorry{' ' + user_name if user_name else ''}, you don't have any introductions available until {next_date}. Please try again after this date!"
+            else:
+                return f"Sorry{' ' + user_name if user_name else ''}, you don't have any introductions available right now. I'll reach out to you soon!"
+        
         # Message de confirmation immédiat
         confirmation_msg = f"Yes{' ' + user_name if user_name else ''} ! Let me find someone for you... 🔍"
         
@@ -977,7 +997,7 @@ def handle_intro_request(user_id: str, phone_number: str, user_name: str = "") -
         
     except Exception as e:
         logging.error(f"[INTRO_REQUEST] Erreur lors du traitement: {str(e)}")
-        return "Désolé, je n'ai pas pu traiter ta demande pour le moment. Peux-tu réessayer ?"
+        return "Sorry, I couldn't process your request right now. Can you try again?"
 
 def trigger_matching_and_intro_for_user(user_id: str, phone_number: str, user_name: str = ""):
     """Déclenche le matching puis l'introduction pour un utilisateur spécifique"""
@@ -995,15 +1015,15 @@ def trigger_matching_and_intro_for_user(user_id: str, phone_number: str, user_na
         
         if matching_response.status_code != 200:
             logging.error(f"[INTRO_REQUEST] Erreur matching: {matching_response.text}")
-            error_msg = "Désolé, je n'ai pas pu calculer tes matchs. Réessaie plus tard !"
+            error_msg = "Sorry, I couldn't calculate your matches. Please try again later!"
             send_whatsapp_message(phone_number, error_msg)
             return
         
         logging.info(f"[INTRO_REQUEST] Matchs calculés avec succès pour user {user_id}")
         
         # 2. Attendre que les matchs soient traités
-        logging.info(f"[INTRO_REQUEST] Attente de 60 secondes pour le traitement des matchs...")
-        time.sleep(60)  # Augmenté à 60 secondes
+        logging.info(f"[INTRO_REQUEST] Attente de 10 secondes pour le traitement des matchs...")
+        time.sleep(10)  # Augmenté à 60 secondes
         
         # 3. Déclencher l'introduction (utiliser l'endpoint classique pour l'instant)
         intro_url = os.getenv("INTRODUCTION_FUNCTION_URL", "https://func-message-generation-jackie.azurewebsites.net/api") + "/generate-introduction"
@@ -1023,7 +1043,7 @@ def trigger_matching_and_intro_for_user(user_id: str, phone_number: str, user_na
             # Le message d'introduction a été envoyé directement par la fonction
         else:
             logging.error(f"[INTRO_REQUEST] Erreur introduction: {intro_response.text}")
-            fallback_msg = f"J'ai trouvé des personnes intéressantes pour toi{' ' + user_name if user_name else ''}, mais je n'arrive pas à t'envoyer l'introduction maintenant. Réessaie dans quelques minutes !"
+            fallback_msg = f"I found some interesting people for you{' ' + user_name if user_name else ''}, but I can't send you the introduction right now. Please try again in a few minutes!"
             send_whatsapp_message(phone_number, fallback_msg)
         
     except Exception as e:
@@ -1032,7 +1052,7 @@ def trigger_matching_and_intro_for_user(user_id: str, phone_number: str, user_na
         traceback.print_exc()
         
         # Message d'erreur à l'utilisateur
-        error_msg = f"Désolé{' ' + user_name if user_name else ''}, j'ai rencontré un problème technique. Peux-tu réessayer dans quelques minutes ?"
+        error_msg = f"Sorry{' ' + user_name if user_name else ''}, I encountered a technical issue. Please try again in a few minutes."
         try:
             send_whatsapp_message(phone_number, error_msg)
         except:
