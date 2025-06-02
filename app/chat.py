@@ -572,14 +572,15 @@ Never bullet points, or use Bold font -> type you're 25 years old person texting
 def store_message(user_id: str, phone_number: str, content: str, direction: str = 'incoming', message_sid: str = None) -> Optional[dict]:
     """Stocke un message dans la base de données Supabase"""
     try:
-        message = {
-            'id': str(uuid.uuid4()),
-            'user_id': user_id,
-            'phone_number': phone_number,
-            'content': content,
-            'direction': direction,
-            'message_type': 'whatsapp',
-            'metadata': {
+        message_id = str(uuid.uuid4())
+        message_entry = {
+            "id": message_id,
+            "user_id": user_id,
+            "phone_number": phone_number,
+            "content": content,
+            "direction": direction,
+            "message_type": 'whatsapp',
+            "metadata": {
                 'message_sid': message_sid,
                 'status': 'received' if direction == 'incoming' else 'sent',
                 'timestamp': datetime.now(timezone.utc).isoformat()
@@ -587,12 +588,12 @@ def store_message(user_id: str, phone_number: str, content: str, direction: str 
         }
         
         logger.info(f"Stockage du message:")
-        logger.info(f"  - ID: {message['id']}")
+        logger.info(f"  - ID: {message_id}")
         logger.info(f"  - Direction: {direction}")
         logger.info(f"  - Contenu: {content[:50]}...")
         
         result = supabase.table('messages') \
-            .insert(message) \
+            .insert(message_entry) \
             .execute()
         
         if result.data:
