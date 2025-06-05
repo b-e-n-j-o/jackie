@@ -210,8 +210,8 @@ def detect_intro_request_intention(message: str) -> float:
         logging.info(f"Analyse d'intention d'introduction pour: '{message}'")
         
         system_prompt = """
-        Tu es un assistant intelligent qui analyse les messages des utilisateurs.
-        Ta tâche est de déterminer si un message exprime le souhait de recevoir une introduction ou un match avec une autre personne.
+        Tu es un assistant intelligent qui analyse les messages des utilisateurs pour un service de matching social par message. Les utilisateurs peuvent demander a recevoir un profil d'un autre utilisateur au service et toi du doit determiner si le message recu du user emet une intention de recevoir le profil d'un autre utilisateur.
+        Ta tâche est de déterminer si un message exprime le souhait de recevoir une introduction ou un match avec une autre personne, ou qu'on lui envoie un profile ou qu'on lui envoie quelqu'un.
         
         Réponds uniquement par un nombre entre 0 et 1 où:
         - 0 signifie que le message ne contient aucune intention d'introduction
