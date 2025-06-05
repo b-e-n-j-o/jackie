@@ -963,6 +963,8 @@ def handle_intro_request(user_id: str, phone_number: str, user_name: str = "") -
     try:
         logging.info(f"[INTRO_REQUEST] Début du traitement pour user {user_id}")
         
+        # Vérification de disponibilité temporairement désactivée
+        """
         # Vérifier la disponibilité de l'utilisateur
         user_check = supabase.table("users") \
             .select("is_available, next_available_date") \
@@ -982,6 +984,7 @@ def handle_intro_request(user_id: str, phone_number: str, user_name: str = "") -
                 return f"Sorry{' ' + user_name if user_name else ''}, you don't have any introductions available until {next_date}. Please try again after this date!"
             else:
                 return f"Sorry{' ' + user_name if user_name else ''}, you don't have any introductions available right now. I'll reach out to you soon!"
+        """
         
         # Message de confirmation immédiat
         confirmation_msg = f"Yes{' ' + user_name if user_name else ''} ! Let me find someone for you... 🔍"
