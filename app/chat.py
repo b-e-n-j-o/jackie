@@ -861,106 +861,60 @@ async def process_message(session_data: dict, message: str, phone_number: str, r
         
         # Check for intro request intention
         intro_intention_score = detect_intro_request_intention(message)
-        logger.info(f"Intro request intention score: {intro_intention_score}")
+        logging.info(f"[INTRO_DETECTION] Score d'intention d'introduction: {intro_intention_score}")
+        logging.info(f"[INTRO_DETECTION] Message analysé: '{message[:100]}...'")
         
-        # Vérifier si c'est une réponse à un template
-        template_response = detect_template_response(message, user_id)
-        
-        if template_response["is_template_response"]:
-            if template_response["response_type"] == "positive":
-                # Réponse positive au template d'intro
-                response_message = handle_positive_template_response(user_id, phone_number, user_context, template_response["template_metadata"])
+        if intro_intention_score > 0.7:
+            logging.info(f"[INTRO_DETECTION] Intention d'introduction détectée (score: {intro_intention_score})")
+            # Handle intro request
+            user_name = user_context.get('personal_profile', {}).get('name', "").split()[0] if user_context.get('personal_profile', {}).get('name') else ""
+            logging.info(f"[INTRO_DETECTION] Déclenchement de handle_intro_request pour user {user_id} (nom: {user_name})")
+            confirmation_message = handle_intro_request(user_id, phone_number, user_name)
+            
+            # Store messages with appropriate tags
+            logging.info(f"[INTRO_DETECTION] Stockage des messages avec tags 'intro_request' et 'intro_confirmation'")
+            store_message(user_id, phone_number, message, 'incoming', tag='intro_request')
+            store_message(user_id, phone_number, confirmation_message, 'outgoing', tag='intro_confirmation')
+            
+            # Add messages to session history
+            if "messages" not in session_data:
+                session_data["messages"] = []
                 
-                # Store messages with tags
-                store_message(user_id, phone_number, message, 'incoming', tag='template_response_positive')
-                store_message(user_id, phone_number, response_message, 'outgoing', tag='intro_sent')
-                
-                # Add messages to session history
-                if "messages" not in session_data:
-                    session_data["messages"] = []
-                    
-                session_data["messages"].append({
-                    "role": "user",
-                    "content": message,
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                })
-                
-                session_data["messages"].append({
-                    "role": "assistant",
-                    "content": response_message,
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                })
-                
-                # Update last activity
-                session_data["last_activity"] = datetime.now(timezone.utc).isoformat()
-                
-                # Update Redis if available
-                if redis_client:
-                    session_key = f"session:{phone_number}"
-                    redis_client.setex(session_key, 60, json.dumps(session_data))
-                
-                # Update database
-                try:
-                    supabase.table('sessions').update({
-                        "last_activity": session_data["last_activity"],
-                        "messages": json.dumps(session_data["messages"])
-                    }).eq("id", session_id).execute()
-                except Exception as e:
-                    logger.error(f"Error updating session in database: {str(e)}")
-                
-                return {
-                    "success": True,
-                    "response": response_message,
-                    "session_data": session_data,
-                    "template_response": True
-                }
-                
-            elif template_response["response_type"] == "negative":
-                # Réponse négative au template
-                response_message = "No problem! Feel free to reach out anytime if you change your mind."
-                
-                store_message(user_id, phone_number, message, 'incoming', tag='template_response_negative')
-                store_message(user_id, phone_number, response_message, 'outgoing', tag='conversation')
-                
-                # Add messages to session history
-                if "messages" not in session_data:
-                    session_data["messages"] = []
-                    
-                session_data["messages"].append({
-                    "role": "user",
-                    "content": message,
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                })
-                
-                session_data["messages"].append({
-                    "role": "assistant",
-                    "content": response_message,
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                })
-                
-                # Update last activity
-                session_data["last_activity"] = datetime.now(timezone.utc).isoformat()
-                
-                # Update Redis if available
-                if redis_client:
-                    session_key = f"session:{phone_number}"
-                    redis_client.setex(session_key, 60, json.dumps(session_data))
-                
-                # Update database
-                try:
-                    supabase.table('sessions').update({
-                        "last_activity": session_data["last_activity"],
-                        "messages": json.dumps(session_data["messages"])
-                    }).eq("id", session_id).execute()
-                except Exception as e:
-                    logger.error(f"Error updating session in database: {str(e)}")
-                
-                return {
-                    "success": True,
-                    "response": response_message,
-                    "session_data": session_data,
-                    "template_response": True
-                }
+            session_data["messages"].append({
+                "role": "user",
+                "content": message,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+            
+            session_data["messages"].append({
+                "role": "assistant",
+                "content": confirmation_message,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+            
+            # Update last activity
+            session_data["last_activity"] = datetime.now(timezone.utc).isoformat()
+            
+            # Update Redis if available
+            if redis_client:
+                session_key = f"session:{phone_number}"
+                redis_client.setex(session_key, 60, json.dumps(session_data))
+            
+            # Update database
+            try:
+                supabase.table('sessions').update({
+                    "last_activity": session_data["last_activity"],
+                    "messages": json.dumps(session_data["messages"])
+                }).eq("id", session_id).execute()
+            except Exception as e:
+                logger.error(f"Error updating session in database: {str(e)}")
+            
+            return {
+                "success": True,
+                "response": confirmation_message,
+                "session_data": session_data,
+                "intro_requested": True
+            }
         
         if call_intention_score > 0.8:
             # Handle call intention
@@ -1017,55 +971,6 @@ async def process_message(session_data: dict, message: str, phone_number: str, r
                 "response": notification_message,
                 "session_data": session_data,
                 "call_initiated": True
-            }
-        
-        elif intro_intention_score > 0.7:
-            # Handle intro request
-            user_name = user_context.get('personal_profile', {}).get('name', "").split()[0] if user_context.get('personal_profile', {}).get('name') else ""
-            confirmation_message = handle_intro_request(user_id, phone_number, user_name)
-            
-            # Store messages with appropriate tags
-            store_message(user_id, phone_number, message, 'incoming', tag='intro_request')
-            store_message(user_id, phone_number, confirmation_message, 'outgoing', tag='intro_confirmation')
-            
-            # Add messages to session history
-            if "messages" not in session_data:
-                session_data["messages"] = []
-                
-            session_data["messages"].append({
-                "role": "user",
-                "content": message,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            })
-            
-            session_data["messages"].append({
-                "role": "assistant",
-                "content": confirmation_message,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            })
-            
-            # Update last activity
-            session_data["last_activity"] = datetime.now(timezone.utc).isoformat()
-            
-            # Update Redis if available
-            if redis_client:
-                session_key = f"session:{phone_number}"
-                redis_client.setex(session_key, 60, json.dumps(session_data))
-            
-            # Update database
-            try:
-                supabase.table('sessions').update({
-                    "last_activity": session_data["last_activity"],
-                    "messages": json.dumps(session_data["messages"])
-                }).eq("id", session_id).execute()
-            except Exception as e:
-                logger.error(f"Error updating session in database: {str(e)}")
-            
-            return {
-                "success": True,
-                "response": confirmation_message,
-                "session_data": session_data,
-                "intro_requested": True
             }
         
         # Process normal message
@@ -1237,69 +1142,60 @@ def handle_positive_template_response(user_id: str, phone_number: str, user_cont
             logging.warning("[TEMPLATE_RESPONSE] Pas de métadonnées template disponibles")
             return "Great! I'm preparing your introduction. You'll receive it shortly!"
         
-        # Extraire l'original_user_id depuis les métadonnées ou depuis la base
+        # Extraire l'original_user_id depuis les métadonnées du template
         original_user_id = None
-        
-        # Méthode 1: Depuis les métadonnées du template
-        if 'match_info' in template_metadata:
-            original_user_id = template_metadata['match_info'].get('original_user_id')
-        
-        # Méthode 2: Rechercher dans user_matches
-        if not original_user_id:
-            match_query = supabase.table('user_matches') \
-                .select('user_id') \
-                .eq('matched_user_id', user_id) \
-                .eq('status', 'introduction_sent') \
-                .order('created_at', desc=True) \
-                .limit(1) \
-                .execute()
-            
-            if match_query.data:
-                original_user_id = match_query.data[0]['user_id']
+        if 'template_info' in template_metadata:
+            original_user_id = template_metadata['template_info'].get('original_user_id')
+            logging.info(f"[TEMPLATE_RESPONSE] Original user ID trouvé: {original_user_id}")
         
         if not original_user_id:
-            logging.error("[TEMPLATE_RESPONSE] Impossible de trouver l'utilisateur original")
+            logging.error("[TEMPLATE_RESPONSE] Impossible de trouver l'utilisateur original dans les métadonnées")
             return "Thanks for your interest! I'm working on getting your introduction ready."
         
-        # Récupérer les informations des deux utilisateurs
-        user_info = supabase.table('personal_profiles') \
-            .select('name, bio') \
-            .eq('user_id', user_id) \
-            .single() \
-            .execute()
-        
-        original_user_info = supabase.table('personal_profiles') \
-            .select('name, bio') \
+        # Récupérer le message d'introduction stocké depuis user_matches
+        logging.info(f"[TEMPLATE_RESPONSE] Recherche du message d'introduction pour user_id={original_user_id} et matched_user_id={user_id}")
+        match_data = supabase.table('user_matches') \
+            .select('introduction_message_for_matched') \
             .eq('user_id', original_user_id) \
-            .single() \
+            .eq('matched_user_id', user_id) \
+            .order('created_at', desc=True) \
+            .limit(1) \
             .execute()
+            
+        if not match_data.data or not match_data.data[0].get('introduction_message_for_matched'):
+            logging.error("[TEMPLATE_RESPONSE] Message d'introduction non trouvé dans la base")
+            return "Thanks for your interest! I'm working on getting your introduction ready."
+            
+        # Récupérer le message stocké
+        intro_message = match_data.data[0]['introduction_message_for_matched']
+        logging.info(f"[TEMPLATE_RESPONSE] Message d'introduction trouvé (premiers 100 caractères): {intro_message[:100]}...")
         
-        # Générer le message d'introduction personnalisé
-        if user_info.data and original_user_info.data:
-            user_name = user_info.data.get('name', 'Someone')
-            original_name = original_user_info.data.get('name', 'Someone')
+        # Mettre à jour le statut du match
+        logging.info(f"[TEMPLATE_RESPONSE] Mise à jour du statut du match pour user_id={original_user_id} et matched_user_id={user_id}")
+        update_result = supabase.table('user_matches') \
+            .update({
+                "status": "introduction_sent",
+                "message_sent": True,
+                "message_sent_at": datetime.now(timezone.utc).isoformat(),
+                "metadata": {
+                    "template_info": {
+                        "awaiting_response": False,
+                        "response_received_at": datetime.now(timezone.utc).isoformat()
+                    }
+                }
+            }) \
+            .eq('user_id', original_user_id) \
+            .eq('matched_user_id', user_id) \
+            .execute()
             
-            # Récupérer l'Instagram de l'utilisateur original
-            original_user_data = supabase.table('users') \
-                .select('instagram') \
-                .eq('id', original_user_id) \
-                .single() \
-                .execute()
-            
-            instagram_handle = original_user_data.data.get('instagram', '') if original_user_data.data else ''
-            
-            intro_message = f"Perfect! Here's {original_name}'s introduction:\n\n"
-            intro_message += f"{original_user_info.data.get('bio', 'A great person to meet!')}\n\n"
-            
-            if instagram_handle:
-                intro_message += f"You can reach out to {original_name} on Instagram: @{instagram_handle}"
-            else:
-                intro_message += f"I'll help you connect with {original_name} soon!"
-            
-            return intro_message
+        if update_result.data:
+            logging.info("[TEMPLATE_RESPONSE] Statut du match mis à jour avec succès")
         else:
-            return "Perfect! Here's your personalized introduction. I'll send you the details shortly!"
+            logging.warning("[TEMPLATE_RESPONSE] Échec de la mise à jour du statut du match")
+            
+        return intro_message
             
     except Exception as e:
         logging.error(f"[TEMPLATE_RESPONSE] Erreur: {str(e)}")
+        logging.error(f"[TEMPLATE_RESPONSE] Traceback: {traceback.format_exc()}")
         return "Thanks for your interest! I'm working on getting your introduction ready."
