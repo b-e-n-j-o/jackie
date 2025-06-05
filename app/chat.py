@@ -263,6 +263,72 @@ def detect_intro_request_intention(message: str) -> float:
         logging.error(f"Erreur lors de la détection d'intention d'introduction: {str(e)}")
         return 0
 
+def detect_template_response(message: str, user_id: str) -> Dict[str, Any]:
+    """Détecte si un message est une réponse à un template et détermine le type"""
+    try:
+        logging.info(f"Analyse de réponse template pour user {user_id}: '{message}'")
+        
+        # Vérifier s'il y a des messages template récents pour cet utilisateur
+        recent_templates = supabase.table('messages') \
+            .select('tag, content, created_at, metadata') \
+            .eq('user_id', user_id) \
+            .eq('direction', 'outgoing') \
+            .eq('tag', 'template_intro') \
+            .order('created_at', desc=True) \
+            .limit(3) \
+            .execute()
+        
+        if not recent_templates.data:
+            return {"is_template_response": False, "template_type": None}
+        
+        # Récupérer les métadonnées du template le plus récent
+        latest_template = recent_templates.data[0]
+        template_metadata = latest_template.get('metadata', {})
+        
+        # Analyser avec LLM si c'est une réponse positive/négative
+        system_prompt = """
+        Tu analyses si un message est une réponse à un template WhatsApp d'introduction.
+        Détermine si la réponse est positive (accepte l'introduction) ou négative (refuse).
+        
+        Réponses POSITIVES typiques: "oui", "yes", "d'accord", "ok", "je veux bien", "envoie", "vas-y"
+        Réponses NÉGATIVES typiques: "non", "no", "pas maintenant", "pas intéressé", "merci mais non"
+        
+        Réponds avec un JSON:
+        {
+            "is_template_response": true/false,
+            "response_type": "positive/negative/unclear",
+            "confidence": 0.0-1.0
+        }
+        """
+        
+        response = client.chat.completions.create(
+            model=AZURE_OPENAI_DEPLOYMENT_NAME,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Message: {message}"}
+            ],
+            temperature=0.3,
+            response_format={"type": "json_object"}
+        )
+        
+        result = json.loads(response.choices[0].message.content)
+        
+        # Si c'est une réponse template avec confiance élevée
+        if result.get("is_template_response") and result.get("confidence", 0) > 0.7:
+            return {
+                "is_template_response": True,
+                "template_type": "intro_template",
+                "response_type": result.get("response_type"),
+                "confidence": result.get("confidence"),
+                "template_metadata": template_metadata
+            }
+        
+        return {"is_template_response": False, "template_type": None}
+        
+    except Exception as e:
+        logging.error(f"Erreur lors de la détection de réponse template: {str(e)}")
+        return {"is_template_response": False, "template_type": None}
+
 def get_user_context_for_call(phone_number: str) -> dict:
     """Récupère le contexte utilisateur pour un appel vocal"""
     try:
@@ -569,8 +635,8 @@ Never bullet points, or use Bold font -> type you're 25 years old person texting
         logger.error(f"Erreur lors du traitement du message: {str(e)}")
         return "Désolé, je n'ai pas pu traiter votre message correctement."
 
-def store_message(user_id: str, phone_number: str, content: str, direction: str = 'incoming', message_sid: str = None) -> Optional[dict]:
-    """Stocke un message dans la base de données Supabase"""
+def store_message(user_id: str, phone_number: str, content: str, direction: str = 'incoming', message_sid: str = None, tag: str = None) -> Optional[dict]:
+    """Stocke un message dans la base de données Supabase avec support pour les tags"""
     try:
         message_id = str(uuid.uuid4())
         message_entry = {
@@ -580,6 +646,7 @@ def store_message(user_id: str, phone_number: str, content: str, direction: str 
             "content": content,
             "direction": direction,
             "message_type": 'whatsapp',
+            "tag": tag,
             "metadata": {
                 'message_sid': message_sid,
                 'status': 'received' if direction == 'incoming' else 'sent',
@@ -587,17 +654,17 @@ def store_message(user_id: str, phone_number: str, content: str, direction: str 
             }
         }
         
-        logger.info(f"Stockage du message:")
+        # Log avec tag si présent
+        tag_info = f" avec tag '{tag}'" if tag else ""
+        logger.info(f"Stockage du message{tag_info}:")
         logger.info(f"  - ID: {message_id}")
         logger.info(f"  - Direction: {direction}")
         logger.info(f"  - Contenu: {content[:50]}...")
         
-        result = supabase.table('messages') \
-            .insert(message_entry) \
-            .execute()
+        result = supabase.table('messages').insert(message_entry).execute()
         
         if result.data:
-            logger.info(f"Message stocké avec succès")
+            logger.info(f"Message stocké avec succès{tag_info}")
             return result.data[0]
         return None
         
@@ -796,16 +863,114 @@ async def process_message(session_data: dict, message: str, phone_number: str, r
         intro_intention_score = detect_intro_request_intention(message)
         logger.info(f"Intro request intention score: {intro_intention_score}")
         
+        # Vérifier si c'est une réponse à un template
+        template_response = detect_template_response(message, user_id)
+        
+        if template_response["is_template_response"]:
+            if template_response["response_type"] == "positive":
+                # Réponse positive au template d'intro
+                response_message = handle_positive_template_response(user_id, phone_number, user_context, template_response["template_metadata"])
+                
+                # Store messages with tags
+                store_message(user_id, phone_number, message, 'incoming', tag='template_response_positive')
+                store_message(user_id, phone_number, response_message, 'outgoing', tag='intro_sent')
+                
+                # Add messages to session history
+                if "messages" not in session_data:
+                    session_data["messages"] = []
+                    
+                session_data["messages"].append({
+                    "role": "user",
+                    "content": message,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                })
+                
+                session_data["messages"].append({
+                    "role": "assistant",
+                    "content": response_message,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                })
+                
+                # Update last activity
+                session_data["last_activity"] = datetime.now(timezone.utc).isoformat()
+                
+                # Update Redis if available
+                if redis_client:
+                    session_key = f"session:{phone_number}"
+                    redis_client.setex(session_key, 60, json.dumps(session_data))
+                
+                # Update database
+                try:
+                    supabase.table('sessions').update({
+                        "last_activity": session_data["last_activity"],
+                        "messages": json.dumps(session_data["messages"])
+                    }).eq("id", session_id).execute()
+                except Exception as e:
+                    logger.error(f"Error updating session in database: {str(e)}")
+                
+                return {
+                    "success": True,
+                    "response": response_message,
+                    "session_data": session_data,
+                    "template_response": True
+                }
+                
+            elif template_response["response_type"] == "negative":
+                # Réponse négative au template
+                response_message = "No problem! Feel free to reach out anytime if you change your mind."
+                
+                store_message(user_id, phone_number, message, 'incoming', tag='template_response_negative')
+                store_message(user_id, phone_number, response_message, 'outgoing', tag='conversation')
+                
+                # Add messages to session history
+                if "messages" not in session_data:
+                    session_data["messages"] = []
+                    
+                session_data["messages"].append({
+                    "role": "user",
+                    "content": message,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                })
+                
+                session_data["messages"].append({
+                    "role": "assistant",
+                    "content": response_message,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                })
+                
+                # Update last activity
+                session_data["last_activity"] = datetime.now(timezone.utc).isoformat()
+                
+                # Update Redis if available
+                if redis_client:
+                    session_key = f"session:{phone_number}"
+                    redis_client.setex(session_key, 60, json.dumps(session_data))
+                
+                # Update database
+                try:
+                    supabase.table('sessions').update({
+                        "last_activity": session_data["last_activity"],
+                        "messages": json.dumps(session_data["messages"])
+                    }).eq("id", session_id).execute()
+                except Exception as e:
+                    logger.error(f"Error updating session in database: {str(e)}")
+                
+                return {
+                    "success": True,
+                    "response": response_message,
+                    "session_data": session_data,
+                    "template_response": True
+                }
+        
         if call_intention_score > 0.8:
             # Handle call intention
             user_context_for_call = get_user_context_for_call(phone_number)
             user_name = user_context_for_call.get("name", "").split()[0] if user_context_for_call.get("name") else ""
             notification_message = generate_call_confirmation_message(user_name, user_context_for_call)
             
-            # Store message
-            store_message(user_id, phone_number, message, 'incoming')
-            # Store message in outgoing and database
-            store_message(user_id, phone_number, notification_message, 'outgoing')
+            # Store message with appropriate tags
+            store_message(user_id, phone_number, message, 'incoming', tag='call_request')
+            store_message(user_id, phone_number, notification_message, 'outgoing', tag='call_confirmation')
             
             # Add messages to session history
             if "messages" not in session_data:
@@ -854,14 +1019,14 @@ async def process_message(session_data: dict, message: str, phone_number: str, r
                 "call_initiated": True
             }
         
-        elif intro_intention_score > 0.7:  # Nouveau: Gestion des demandes d'introduction
+        elif intro_intention_score > 0.7:
             # Handle intro request
             user_name = user_context.get('personal_profile', {}).get('name', "").split()[0] if user_context.get('personal_profile', {}).get('name') else ""
             confirmation_message = handle_intro_request(user_id, phone_number, user_name)
             
-            # Store messages
-            store_message(user_id, phone_number, message, 'incoming')
-            store_message(user_id, phone_number, confirmation_message, 'outgoing')
+            # Store messages with appropriate tags
+            store_message(user_id, phone_number, message, 'incoming', tag='intro_request')
+            store_message(user_id, phone_number, confirmation_message, 'outgoing', tag='intro_confirmation')
             
             # Add messages to session history
             if "messages" not in session_data:
@@ -906,9 +1071,9 @@ async def process_message(session_data: dict, message: str, phone_number: str, r
         # Process normal message
         response = process_message_with_context(message, user_context, phone_number)
         
-        # Store messages
-        store_message(user_id, phone_number, message, 'incoming')
-        store_message(user_id, phone_number, response, 'outgoing')
+        # Store messages (pas de tag pour les conversations normales)
+        store_message(user_id, phone_number, message, 'incoming', tag='conversation')
+        store_message(user_id, phone_number, response, 'outgoing', tag='conversation')
         
         # Add messages to session history
         if "messages" not in session_data:
@@ -1061,3 +1226,80 @@ def trigger_matching_and_intro_for_user(user_id: str, phone_number: str, user_na
             send_whatsapp_message(phone_number, error_msg)
         except:
             pass
+
+def handle_positive_template_response(user_id: str, phone_number: str, user_context: dict, template_metadata: dict = None) -> str:
+    """Gère une réponse positive à un template d'introduction"""
+    try:
+        logging.info(f"[TEMPLATE_RESPONSE] Traitement réponse positive pour user {user_id}")
+        
+        # Récupérer les informations du match depuis les métadonnées du template
+        if not template_metadata:
+            logging.warning("[TEMPLATE_RESPONSE] Pas de métadonnées template disponibles")
+            return "Great! I'm preparing your introduction. You'll receive it shortly!"
+        
+        # Extraire l'original_user_id depuis les métadonnées ou depuis la base
+        original_user_id = None
+        
+        # Méthode 1: Depuis les métadonnées du template
+        if 'match_info' in template_metadata:
+            original_user_id = template_metadata['match_info'].get('original_user_id')
+        
+        # Méthode 2: Rechercher dans user_matches
+        if not original_user_id:
+            match_query = supabase.table('user_matches') \
+                .select('user_id') \
+                .eq('matched_user_id', user_id) \
+                .eq('status', 'introduction_sent') \
+                .order('created_at', desc=True) \
+                .limit(1) \
+                .execute()
+            
+            if match_query.data:
+                original_user_id = match_query.data[0]['user_id']
+        
+        if not original_user_id:
+            logging.error("[TEMPLATE_RESPONSE] Impossible de trouver l'utilisateur original")
+            return "Thanks for your interest! I'm working on getting your introduction ready."
+        
+        # Récupérer les informations des deux utilisateurs
+        user_info = supabase.table('personal_profiles') \
+            .select('name, bio') \
+            .eq('user_id', user_id) \
+            .single() \
+            .execute()
+        
+        original_user_info = supabase.table('personal_profiles') \
+            .select('name, bio') \
+            .eq('user_id', original_user_id) \
+            .single() \
+            .execute()
+        
+        # Générer le message d'introduction personnalisé
+        if user_info.data and original_user_info.data:
+            user_name = user_info.data.get('name', 'Someone')
+            original_name = original_user_info.data.get('name', 'Someone')
+            
+            # Récupérer l'Instagram de l'utilisateur original
+            original_user_data = supabase.table('users') \
+                .select('instagram') \
+                .eq('id', original_user_id) \
+                .single() \
+                .execute()
+            
+            instagram_handle = original_user_data.data.get('instagram', '') if original_user_data.data else ''
+            
+            intro_message = f"Perfect! Here's {original_name}'s introduction:\n\n"
+            intro_message += f"{original_user_info.data.get('bio', 'A great person to meet!')}\n\n"
+            
+            if instagram_handle:
+                intro_message += f"You can reach out to {original_name} on Instagram: @{instagram_handle}"
+            else:
+                intro_message += f"I'll help you connect with {original_name} soon!"
+            
+            return intro_message
+        else:
+            return "Perfect! Here's your personalized introduction. I'll send you the details shortly!"
+            
+    except Exception as e:
+        logging.error(f"[TEMPLATE_RESPONSE] Erreur: {str(e)}")
+        return "Thanks for your interest! I'm working on getting your introduction ready."
