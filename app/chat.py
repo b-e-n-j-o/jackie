@@ -973,6 +973,41 @@ async def process_message(session_data: dict, message: str, phone_number: str, r
                 "call_initiated": True
             }
         
+        # Vérification de réponse à un template d'intro
+        template_response = detect_template_response(message, user_id)
+        if template_response.get("is_template_response") and template_response.get("response_type") == "positive":
+            template_metadata = template_response.get("template_metadata")
+            # Récupérer le message d'intro stocké et le statut du match
+            intro_message = handle_positive_template_response(user_id, phone_number, user_context, template_metadata)
+            # Envoyer le message d'intro au user
+            send_whatsapp_message(phone_number, intro_message)
+            # Stocker le message envoyé avec le tag 'intro_post_template'
+            store_message(user_id, phone_number, intro_message, 'outgoing', tag='intro_post_template')
+            # Ajouter à l'historique de session
+            if "messages" not in session_data:
+                session_data["messages"] = []
+            session_data["messages"].append({
+                "role": "assistant",
+                "content": intro_message,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+            # Mettre à jour la session en base
+            session_data["last_activity"] = datetime.now(timezone.utc).isoformat()
+            try:
+                supabase.table('sessions').update({
+                    "last_activity": session_data["last_activity"],
+                    "messages": json.dumps(session_data["messages"])
+                }).eq("id", session_id).execute()
+            except Exception as e:
+                logger.error(f"Error updating session in database: {str(e)}")
+            # Retourner la réponse immédiatement
+            return {
+                "success": True,
+                "response": intro_message,
+                "session_data": session_data,
+                "intro_sent": True
+            }
+        
         # Process normal message
         response = process_message_with_context(message, user_context, phone_number)
         
