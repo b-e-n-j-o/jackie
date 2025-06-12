@@ -1068,32 +1068,6 @@ def handle_intro_request(user_id: str, phone_number: str, user_name: str = "") -
     try:
         logging.info(f"[INTRO_REQUEST] Début du traitement pour user {user_id}")
         
-        # Vérification de disponibilité temporairement désactivée
-        """
-        # Vérifier la disponibilité de l'utilisateur
-        user_check = supabase.table("users") \
-            .select("is_available, next_available_date") \
-            .eq("id", user_id) \
-            .single() \
-            .execute()
-            
-        if not user_check.data:
-            logging.error(f"[INTRO_REQUEST] Utilisateur {user_id} non trouvé")
-            return "Sorry, I couldn't find your profile. Can you try again?"
-            
-        if not user_check.data.get("is_available", True):
-            next_available = user_check.data.get("next_available_date")
-            if next_available:
-                # Extraire juste la date (YYYY-MM-DD)
-                next_date = next_available.split("T")[0]
-                return f"Sorry{' ' + user_name if user_name else ''}, you don't have any introductions available until {next_date}. Please try again after this date!"
-            else:
-                return f"Sorry{' ' + user_name if user_name else ''}, you don't have any introductions available right now. I'll reach out to you soon!"
-        """
-        
-        # Message de confirmation immédiat
-        confirmation_msg = f"Yes{' ' + user_name if user_name else ''} ! Let me find someone for you..."
-        
         # Déclencher le processus de matching et introduction en arrière-plan
         import threading
         thread = threading.Thread(
@@ -1102,11 +1076,28 @@ def handle_intro_request(user_id: str, phone_number: str, user_name: str = "") -
         )
         thread.start()
         
-        return confirmation_msg
+        # Récupérer le message d'introduction stocké depuis user_matches
+        logging.info(f"[INTRO_REQUEST] Recherche du message d'introduction pour user {user_id}")
+        match_data = supabase.table('user_matches') \
+            .select('introduction_message_for_matched') \
+            .eq('matched_user_id', user_id) \
+            .order('created_at', desc=True) \
+            .limit(1) \
+            .execute()
+            
+        if not match_data.data or not match_data.data[0].get('introduction_message_for_matched'):
+            logging.error("[INTRO_REQUEST] Message d'introduction non trouvé dans la base")
+            return "I'm looking for the perfect match for you. I'll send you an introduction as soon as I find someone interesting!"
+            
+        # Récupérer le message stocké
+        intro_message = match_data.data[0]['introduction_message_for_matched']
+        logging.info(f"[INTRO_REQUEST] Message d'introduction trouvé (premiers 100 caractères): {intro_message[:100]}...")
+        
+        return intro_message
         
     except Exception as e:
         logging.error(f"[INTRO_REQUEST] Erreur lors du traitement: {str(e)}")
-        return "Sorry, I couldn't process your request right now. Can you try again?"
+        return "I'm looking for the perfect match for you. I'll send you an introduction as soon as I find someone interesting!"
 
 def trigger_matching_and_intro_for_user(user_id: str, phone_number: str, user_name: str = ""):
     """Déclenche le matching puis l'introduction pour un utilisateur spécifique"""
@@ -1132,7 +1123,7 @@ def trigger_matching_and_intro_for_user(user_id: str, phone_number: str, user_na
         
         # 2. Attendre que les matchs soient traités
         logging.info(f"[INTRO_REQUEST] Attente de 10 secondes pour le traitement des matchs...")
-        time.sleep(30)  # Augmenté à 60 secondes
+        time.sleep(15)  # Augmenté à 60 secondes
         
         # 3. Déclencher l'introduction (utiliser l'endpoint classique pour l'instant)
         intro_url = os.getenv("INTRODUCTION_FUNCTION_URL", "https://func-message-generation-jackie.azurewebsites.net/api") + "/generate-introduction"
