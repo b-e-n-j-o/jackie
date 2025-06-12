@@ -1092,7 +1092,7 @@ def handle_intro_request(user_id: str, phone_number: str, user_name: str = "") -
         """
         
         # Message de confirmation immédiat
-        confirmation_msg = f"Yes{' ' + user_name if user_name else ''} ! Let me find someone for you... 🔍"
+        confirmation_msg = f"Yes{' ' + user_name if user_name else ''} ! Let me find someone for you..."
         
         # Déclencher le processus de matching et introduction en arrière-plan
         import threading
@@ -1114,7 +1114,7 @@ def trigger_matching_and_intro_for_user(user_id: str, phone_number: str, user_na
         logging.info(f"[INTRO_REQUEST] Déclenchement matching pour user {user_id}")
         
         # 1. Déclencher le calcul des matchs pour ce user
-        matching_url = os.getenv("MATCHING_FUNCTION_URL", "https://func-matching-calculator.azurewebsites.net/api/trigger-matching")
+        matching_url = "https://func-matching-calculator.azurewebsites.net/api/trigger-matching"
         
         matching_response = requests.post(
             matching_url, 
@@ -1132,7 +1132,7 @@ def trigger_matching_and_intro_for_user(user_id: str, phone_number: str, user_na
         
         # 2. Attendre que les matchs soient traités
         logging.info(f"[INTRO_REQUEST] Attente de 10 secondes pour le traitement des matchs...")
-        time.sleep(10)  # Augmenté à 60 secondes
+        time.sleep(30)  # Augmenté à 60 secondes
         
         # 3. Déclencher l'introduction (utiliser l'endpoint classique pour l'instant)
         intro_url = os.getenv("INTRODUCTION_FUNCTION_URL", "https://func-message-generation-jackie.azurewebsites.net/api") + "/generate-introduction"
