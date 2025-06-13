@@ -871,10 +871,9 @@ async def process_message(session_data: dict, message: str, phone_number: str, r
             logging.info(f"[INTRO_DETECTION] Déclenchement de handle_intro_request pour user {user_id} (nom: {user_name})")
             confirmation_message = handle_intro_request(user_id, phone_number, user_name)
             
-            # Store messages with appropriate tags
+            # Store message with appropriate tags
             logging.info(f"[INTRO_DETECTION] Stockage des messages avec tags 'intro_request' et 'intro_confirmation'")
             store_message(user_id, phone_number, message, 'incoming', tag='intro_request')
-            store_message(user_id, phone_number, confirmation_message, 'outgoing', tag='intro_confirmation')
             
             # Add messages to session history
             if "messages" not in session_data:
@@ -886,11 +885,14 @@ async def process_message(session_data: dict, message: str, phone_number: str, r
                 "timestamp": datetime.now(timezone.utc).isoformat()
             })
             
-            session_data["messages"].append({
-                "role": "assistant",
-                "content": confirmation_message,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            })
+            # Si on a un message de confirmation, on le stocke et on l'ajoute à l'historique
+            if confirmation_message:
+                store_message(user_id, phone_number, confirmation_message, 'outgoing', tag='intro_confirmation')
+                session_data["messages"].append({
+                    "role": "assistant",
+                    "content": confirmation_message,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                })
             
             # Update last activity
             session_data["last_activity"] = datetime.now(timezone.utc).isoformat()
@@ -911,7 +913,7 @@ async def process_message(session_data: dict, message: str, phone_number: str, r
             
             return {
                 "success": True,
-                "response": confirmation_message,
+                "response": confirmation_message if confirmation_message else "",
                 "session_data": session_data,
                 "intro_requested": True
             }
@@ -1076,6 +1078,9 @@ def handle_intro_request(user_id: str, phone_number: str, user_name: str = "") -
         )
         thread.start()
         
+        # Attendre que le processus de matching et d'introduction soit terminé
+        time.sleep(15)  # Attendre 15 secondes pour que le processus soit terminé
+        
         # Récupérer le message d'introduction stocké depuis user_matches
         logging.info(f"[INTRO_REQUEST] Recherche du message d'introduction pour user {user_id}")
         match_data = supabase.table('user_matches') \
@@ -1087,7 +1092,7 @@ def handle_intro_request(user_id: str, phone_number: str, user_name: str = "") -
             
         if not match_data.data or not match_data.data[0].get('introduction_message_for_matched'):
             logging.error("[INTRO_REQUEST] Message d'introduction non trouvé dans la base")
-            return "I'm looking for the perfect match for you. I'll send you an introduction as soon as I find someone interesting!"
+            return ""
             
         # Récupérer le message stocké
         intro_message = match_data.data[0]['introduction_message_for_matched']
@@ -1097,7 +1102,7 @@ def handle_intro_request(user_id: str, phone_number: str, user_name: str = "") -
         
     except Exception as e:
         logging.error(f"[INTRO_REQUEST] Erreur lors du traitement: {str(e)}")
-        return "I'm looking for the perfect match for you. I'll send you an introduction as soon as I find someone interesting!"
+        return ""
 
 def trigger_matching_and_intro_for_user(user_id: str, phone_number: str, user_name: str = ""):
     """Déclenche le matching puis l'introduction pour un utilisateur spécifique"""
