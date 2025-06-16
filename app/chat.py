@@ -1110,7 +1110,7 @@ def trigger_matching_and_intro_for_user(user_id: str, phone_number: str, user_na
         logging.info(f"[INTRO_REQUEST] Déclenchement matching pour user {user_id}")
         
         # 1. Déclencher le calcul des matchs pour ce user
-        matching_url = "https://func-matching-calculator.azurewebsites.net/api/trigger-matching"
+        matching_url = "https://func-matching-calculator-jackie.azurewebsites.net/api/trigger-matching"
         
         matching_response = requests.post(
             matching_url, 
@@ -1120,7 +1120,7 @@ def trigger_matching_and_intro_for_user(user_id: str, phone_number: str, user_na
         
         if matching_response.status_code != 200:
             logging.error(f"[INTRO_REQUEST] Erreur matching: {matching_response.text}")
-            error_msg = "Sorry, I couldn't calculate your matches. Please try again later!"
+            error_msg = "Sorry, I couldn't find any good matches for you right now. I'll reach out as soon as I find someone interesting to introduce you to!"
             send_whatsapp_message(phone_number, error_msg)
             return
         
@@ -1128,7 +1128,7 @@ def trigger_matching_and_intro_for_user(user_id: str, phone_number: str, user_na
         
         # 2. Attendre que les matchs soient traités
         logging.info(f"[INTRO_REQUEST] Attente de 10 secondes pour le traitement des matchs...")
-        time.sleep(15)  # Augmenté à 60 secondes
+        time.sleep(15)
         
         # 3. Déclencher l'introduction (utiliser l'endpoint classique pour l'instant)
         intro_url = os.getenv("INTRODUCTION_FUNCTION_URL", "https://func-message-generation-jackie.azurewebsites.net/api") + "/generate-introduction"
@@ -1137,7 +1137,7 @@ def trigger_matching_and_intro_for_user(user_id: str, phone_number: str, user_na
         intro_response = requests.post(
             intro_url,
             json={"user_id": user_id},
-            timeout=90  # Augmenté à 90 secondes
+            timeout=90
         )
         
         logging.info(f"[INTRO_REQUEST] Réponse de l'API d'introduction: {intro_response.status_code}")
@@ -1148,20 +1148,15 @@ def trigger_matching_and_intro_for_user(user_id: str, phone_number: str, user_na
             # Le message d'introduction a été envoyé directement par la fonction
         else:
             logging.error(f"[INTRO_REQUEST] Erreur introduction: {intro_response.text}")
-            fallback_msg = f"I found some interesting people for you{' ' + user_name if user_name else ''}, but I can't send you the introduction right now. Please try again in a few minutes!"
-            send_whatsapp_message(phone_number, fallback_msg)
+            error_msg = "Sorry, I couldn't find any good matches for you right now. I'll reach out as soon as I find someone interesting to introduce you to!"
+            send_whatsapp_message(phone_number, error_msg)
         
     except Exception as e:
         logging.error(f"[INTRO_REQUEST] Erreur générale: {str(e)}")
         import traceback
         traceback.print_exc()
-        
-        # Message d'erreur à l'utilisateur
-        error_msg = f"Sorry{' ' + user_name if user_name else ''}, I encountered a technical issue. Please try again in a few minutes."
-        try:
-            send_whatsapp_message(phone_number, error_msg)
-        except:
-            pass
+        error_msg = "Sorry, I couldn't find any good matches for you right now. I'll reach out as soon as I find someone interesting to introduce you to!"
+        send_whatsapp_message(phone_number, error_msg)
 
 def handle_positive_template_response(user_id: str, phone_number: str, user_context: dict, template_metadata: dict = None) -> str:
     """Gère une réponse positive à un template d'introduction"""
@@ -1171,7 +1166,9 @@ def handle_positive_template_response(user_id: str, phone_number: str, user_cont
         # Récupérer les informations du match depuis les métadonnées du template
         if not template_metadata:
             logging.warning("[TEMPLATE_RESPONSE] Pas de métadonnées template disponibles")
-            return "Great! I'm preparing your introduction. You'll receive it shortly!"
+            error_msg = "Sorry, I couldn't find any good matches for you right now. I'll reach out as soon as I find someone interesting to introduce you to!"
+            send_whatsapp_message(phone_number, error_msg)
+            return ""
         
         # Extraire l'original_user_id depuis les métadonnées du template
         original_user_id = None
@@ -1181,7 +1178,9 @@ def handle_positive_template_response(user_id: str, phone_number: str, user_cont
         
         if not original_user_id:
             logging.error("[TEMPLATE_RESPONSE] Impossible de trouver l'utilisateur original dans les métadonnées")
-            return "Thanks for your interest! I'm working on getting your introduction ready."
+            error_msg = "Sorry, I couldn't find any good matches for you right now. I'll reach out as soon as I find someone interesting to introduce you to!"
+            send_whatsapp_message(phone_number, error_msg)
+            return ""
         
         # Récupérer le message d'introduction stocké depuis user_matches
         logging.info(f"[TEMPLATE_RESPONSE] Recherche du message d'introduction pour user_id={original_user_id} et matched_user_id={user_id}")
@@ -1195,7 +1194,9 @@ def handle_positive_template_response(user_id: str, phone_number: str, user_cont
             
         if not match_data.data or not match_data.data[0].get('introduction_message_for_matched'):
             logging.error("[TEMPLATE_RESPONSE] Message d'introduction non trouvé dans la base")
-            return "Thanks for your interest! I'm working on getting your introduction ready."
+            error_msg = "Sorry, I couldn't find any good matches for you right now. I'll reach out as soon as I find someone interesting to introduce you to!"
+            send_whatsapp_message(phone_number, error_msg)
+            return ""
             
         # Récupérer le message stocké
         intro_message = match_data.data[0]['introduction_message_for_matched']
@@ -1229,4 +1230,6 @@ def handle_positive_template_response(user_id: str, phone_number: str, user_cont
     except Exception as e:
         logging.error(f"[TEMPLATE_RESPONSE] Erreur: {str(e)}")
         logging.error(f"[TEMPLATE_RESPONSE] Traceback: {traceback.format_exc()}")
-        return "Thanks for your interest! I'm working on getting your introduction ready."
+        error_msg = "Sorry, I couldn't find any good matches for you right now. I'll reach out as soon as I find someone interesting to introduce you to!"
+        send_whatsapp_message(phone_number, error_msg)
+        return ""
