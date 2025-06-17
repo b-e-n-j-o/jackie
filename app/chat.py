@@ -1182,50 +1182,29 @@ def handle_positive_template_response(user_id: str, phone_number: str, user_cont
             send_whatsapp_message(phone_number, error_msg)
             return ""
         
-        # Récupérer le message d'introduction stocké depuis user_matches
-        logging.info(f"[TEMPLATE_RESPONSE] Recherche du message d'introduction pour user_id={original_user_id} et matched_user_id={user_id}")
-        match_data = supabase.table('user_matches') \
-            .select('introduction_message_for_matched') \
-            .eq('user_id', original_user_id) \
-            .eq('matched_user_id', user_id) \
-            .order('created_at', desc=True) \
-            .limit(1) \
-            .execute()
-            
-        if not match_data.data or not match_data.data[0].get('introduction_message_for_matched'):
-            logging.error("[TEMPLATE_RESPONSE] Message d'introduction non trouvé dans la base")
+        # Appeler l'endpoint send-stored-introduction
+        intro_url = os.getenv("INTRODUCTION_FUNCTION_URL", "https://func-message-generation-jackie.azurewebsites.net/api") + "/send-stored-introduction"
+        logging.info(f"[TEMPLATE_RESPONSE] Appel de l'API send-stored-introduction: {intro_url}")
+        
+        intro_response = requests.post(
+            intro_url,
+            json={
+                "user_id": original_user_id,
+                "matched_user_id": user_id
+            },
+            timeout=90
+        )
+        
+        logging.info(f"[TEMPLATE_RESPONSE] Réponse de l'API send-stored-introduction: {intro_response.status_code}")
+        
+        if intro_response.status_code == 200:
+            logging.info(f"[TEMPLATE_RESPONSE] Introduction envoyée avec succès pour user {user_id}")
+            return "Introduction envoyée avec succès"
+        else:
+            logging.error(f"[TEMPLATE_RESPONSE] Erreur lors de l'envoi de l'introduction: {intro_response.text}")
             error_msg = "Sorry, I couldn't find any good matches for you right now. I'll reach out as soon as I find someone interesting to introduce you to!"
             send_whatsapp_message(phone_number, error_msg)
             return ""
-            
-        # Récupérer le message stocké
-        intro_message = match_data.data[0]['introduction_message_for_matched']
-        logging.info(f"[TEMPLATE_RESPONSE] Message d'introduction trouvé (premiers 100 caractères): {intro_message[:100]}...")
-        
-        # Mettre à jour le statut du match
-        logging.info(f"[TEMPLATE_RESPONSE] Mise à jour du statut du match pour user_id={original_user_id} et matched_user_id={user_id}")
-        update_result = supabase.table('user_matches') \
-            .update({
-                "status": "introduction_sent",
-                "message_sent": True,
-                "message_sent_at": datetime.now(timezone.utc).isoformat(),
-                "metadata": {
-                    "template_info": {
-                        "awaiting_response": False,
-                        "response_received_at": datetime.now(timezone.utc).isoformat()
-                    }
-                }
-            }) \
-            .eq('user_id', original_user_id) \
-            .eq('matched_user_id', user_id) \
-            .execute()
-            
-        if update_result.data:
-            logging.info("[TEMPLATE_RESPONSE] Statut du match mis à jour avec succès")
-        else:
-            logging.warning("[TEMPLATE_RESPONSE] Échec de la mise à jour du statut du match")
-            
-        return intro_message
             
     except Exception as e:
         logging.error(f"[TEMPLATE_RESPONSE] Erreur: {str(e)}")
