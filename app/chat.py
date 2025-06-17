@@ -1079,7 +1079,7 @@ def handle_intro_request(user_id: str, phone_number: str, user_name: str = "") -
         thread.start()
         
         # Attendre que le processus de matching et d'introduction soit terminé
-        time.sleep(15)  # Attendre 15 secondes pour que le processus soit terminé
+        time.sleep(5)  # Attendre 5 secondes pour que le processus soit terminé
         
         # Récupérer le message d'introduction stocké depuis user_matches
         logging.info(f"[INTRO_REQUEST] Recherche du message d'introduction pour user {user_id}")
@@ -1127,8 +1127,8 @@ def trigger_matching_and_intro_for_user(user_id: str, phone_number: str, user_na
         logging.info(f"[INTRO_REQUEST] Matchs calculés avec succès pour user {user_id}")
         
         # 2. Attendre que les matchs soient traités
-        logging.info(f"[INTRO_REQUEST] Attente de 10 secondes pour le traitement des matchs...")
-        time.sleep(15)
+        logging.info(f"[INTRO_REQUEST] Attente de 5 secondes pour le traitement des matchs...")
+        time.sleep(5)
         
         # 3. Déclencher l'introduction (utiliser l'endpoint classique pour l'instant)
         intro_url = os.getenv("INTRODUCTION_FUNCTION_URL", "https://func-message-generation-jackie.azurewebsites.net/api") + "/generate-introduction"
