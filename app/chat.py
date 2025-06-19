@@ -1159,7 +1159,7 @@ def trigger_matching_and_intro_for_user(user_id: str, phone_number: str, user_na
         
         if matching_response.status_code != 200:
             logging.error(f"[INTRO_REQUEST] Erreur matching: {matching_response.text}")
-            error_msg = "Sorry, I couldn't find any good matches for you right now. I'll reach out as soon as I find someone interesting to introduce you to!"
+            error_msg = "Sorry, I couldn't find any good matches for you right now. Please try again later!"
             send_whatsapp_message(phone_number, error_msg)
             
             # NOUVEAU: Déclencher un nouveau matching en arrière-plan pour la prochaine fois
@@ -1197,7 +1197,7 @@ def trigger_matching_and_intro_for_user(user_id: str, phone_number: str, user_na
                 logging.info(f"[INTRO_REQUEST] Aucun match disponible - déclenchement d'un nouveau matching en arrière-plan")
                 schedule_background_matching(user_id)
             
-            error_msg = "Sorry, I couldn't find any good matches for you right now. I'll reach out as soon as I find someone interesting to introduce you to!"
+            error_msg = "Sorry, I couldn't find any good matches for you right now. Please try again later!"
             send_whatsapp_message(phone_number, error_msg)
         
     except Exception as e:
@@ -1209,7 +1209,7 @@ def trigger_matching_and_intro_for_user(user_id: str, phone_number: str, user_na
         logging.info(f"[INTRO_REQUEST] Erreur générale - déclenchement d'un nouveau matching en arrière-plan")
         schedule_background_matching(user_id)
         
-        error_msg = "Sorry, I couldn't find any good matches for you right now. I'll reach out as soon as I find someone interesting to introduce you to!"
+        error_msg = "Sorry, I couldn't find any good matches for you right now. Please try again later!"
         send_whatsapp_message(phone_number, error_msg)
 
 def handle_positive_template_response(user_id: str, phone_number: str, user_context: dict, template_metadata: dict = None) -> str:
@@ -1220,7 +1220,7 @@ def handle_positive_template_response(user_id: str, phone_number: str, user_cont
         # Récupérer les informations du match depuis les métadonnées du template
         if not template_metadata:
             logging.warning("[TEMPLATE_RESPONSE] Pas de métadonnées template disponibles")
-            error_msg = "Sorry, I couldn't find any good matches for you right now. I'll reach out as soon as I find someone interesting to introduce you to!"
+            error_msg = "Sorry, I couldn't find any good matches for you right now. Please try again later!"
             send_whatsapp_message(phone_number, error_msg)
             return ""
         
@@ -1232,7 +1232,7 @@ def handle_positive_template_response(user_id: str, phone_number: str, user_cont
         
         if not original_user_id:
             logging.error("[TEMPLATE_RESPONSE] Impossible de trouver l'utilisateur original dans les métadonnées")
-            error_msg = "Sorry, I couldn't find any good matches for you right now. I'll reach out as soon as I find someone interesting to introduce you to!"
+            error_msg = "Sorry, I couldn't find any good matches for you right now. Please try again later!"
             send_whatsapp_message(phone_number, error_msg)
             return ""
         
@@ -1256,13 +1256,13 @@ def handle_positive_template_response(user_id: str, phone_number: str, user_cont
             return "Introduction envoyée avec succès"
         else:
             logging.error(f"[TEMPLATE_RESPONSE] Erreur lors de l'envoi de l'introduction: {intro_response.text}")
-            error_msg = "Sorry, I couldn't find any good matches for you right now. I'll reach out as soon as I find someone interesting to introduce you to!"
+            error_msg = "Sorry, I couldn't find any good matches for you right now. Please try again later!"
             send_whatsapp_message(phone_number, error_msg)
             return ""
             
     except Exception as e:
         logging.error(f"[TEMPLATE_RESPONSE] Erreur: {str(e)}")
         logging.error(f"[TEMPLATE_RESPONSE] Traceback: {traceback.format_exc()}")
-        error_msg = "Sorry, I couldn't find any good matches for you right now. I'll reach out as soon as I find someone interesting to introduce you to!"
+        error_msg = "Sorry, I couldn't find any good matches for you right now. Please try again later!"
         send_whatsapp_message(phone_number, error_msg)
         return ""
