@@ -497,7 +497,7 @@ def generate_call_confirmation_message(user_name: str, user_context: dict) -> st
         
         Keep the message short 1-2 sentences and make it feel like a natural text message.
         The message should be in English.
-        Don't use emojis, don't use bold font, don't use hashtags
+        Don't use emojis, don't use bold font, don't use hashtags, don't use * around names or words.
         Never bullet points, or use Bold font -> type you're 25 years old person texting a friend """
 
         context_prompt = f"""
@@ -1104,6 +1104,45 @@ def handle_intro_request(user_id: str, phone_number: str, user_name: str = "") -
         logging.error(f"[INTRO_REQUEST] Erreur lors du traitement: {str(e)}")
         return ""
 
+def schedule_background_matching(user_id: str):
+    """Déclenche un nouveau matching en arrière-plan sans notifier l'utilisateur"""
+    try:
+        import threading
+        
+        def background_matching():
+            try:
+                # Attendre un délai avant de relancer le matching (pour éviter les appels trop fréquents)
+                time.sleep(30)  # 30 secondes de délai
+                
+                logging.info(f"[BACKGROUND_MATCHING] Déclenchement du matching en arrière-plan pour user {user_id}")
+                
+                matching_url = "https://func-matching-calculator-jackie.azurewebsites.net/api/trigger-matching"
+                
+                response = requests.post(
+                    matching_url,
+                    json={"user_id": user_id},
+                    timeout=60
+                )
+                
+                if response.status_code == 200:
+                    logging.info(f"[BACKGROUND_MATCHING] Nouveau matching créé avec succès pour user {user_id}")
+                    # Pas de notification - l'utilisateur reviendra quand il voudra
+                else:
+                    logging.error(f"[BACKGROUND_MATCHING] Échec du matching en arrière-plan: {response.text}")
+                    
+            except Exception as e:
+                logging.error(f"[BACKGROUND_MATCHING] Erreur lors du matching en arrière-plan: {str(e)}")
+        
+        # Lancer le matching en arrière-plan dans un thread séparé
+        thread = threading.Thread(target=background_matching)
+        thread.daemon = True  # Le thread se termine quand l'application se ferme
+        thread.start()
+        
+        logging.info(f"[BACKGROUND_MATCHING] Thread de matching en arrière-plan démarré pour user {user_id}")
+        
+    except Exception as e:
+        logging.error(f"[BACKGROUND_MATCHING] Erreur lors de la programmation du matching: {str(e)}")
+
 def trigger_matching_and_intro_for_user(user_id: str, phone_number: str, user_name: str = ""):
     """Déclenche le matching puis l'introduction pour un utilisateur spécifique"""
     try:
@@ -1122,6 +1161,10 @@ def trigger_matching_and_intro_for_user(user_id: str, phone_number: str, user_na
             logging.error(f"[INTRO_REQUEST] Erreur matching: {matching_response.text}")
             error_msg = "Sorry, I couldn't find any good matches for you right now. I'll reach out as soon as I find someone interesting to introduce you to!"
             send_whatsapp_message(phone_number, error_msg)
+            
+            # NOUVEAU: Déclencher un nouveau matching en arrière-plan pour la prochaine fois
+            logging.info(f"[INTRO_REQUEST] Déclenchement d'un nouveau matching en arrière-plan pour user {user_id}")
+            schedule_background_matching(user_id)
             return
         
         logging.info(f"[INTRO_REQUEST] Matchs calculés avec succès pour user {user_id}")
@@ -1148,6 +1191,12 @@ def trigger_matching_and_intro_for_user(user_id: str, phone_number: str, user_na
             # Le message d'introduction a été envoyé directement par la fonction
         else:
             logging.error(f"[INTRO_REQUEST] Erreur introduction: {intro_response.text}")
+            
+            # NOUVEAU: Si l'introduction échoue (aucun match disponible), déclencher un nouveau matching
+            if "Aucun match disponible" in intro_response.text or intro_response.status_code == 404:
+                logging.info(f"[INTRO_REQUEST] Aucun match disponible - déclenchement d'un nouveau matching en arrière-plan")
+                schedule_background_matching(user_id)
+            
             error_msg = "Sorry, I couldn't find any good matches for you right now. I'll reach out as soon as I find someone interesting to introduce you to!"
             send_whatsapp_message(phone_number, error_msg)
         
@@ -1155,6 +1204,11 @@ def trigger_matching_and_intro_for_user(user_id: str, phone_number: str, user_na
         logging.error(f"[INTRO_REQUEST] Erreur générale: {str(e)}")
         import traceback
         traceback.print_exc()
+        
+        # NOUVEAU: En cas d'erreur générale, aussi déclencher un nouveau matching
+        logging.info(f"[INTRO_REQUEST] Erreur générale - déclenchement d'un nouveau matching en arrière-plan")
+        schedule_background_matching(user_id)
+        
         error_msg = "Sorry, I couldn't find any good matches for you right now. I'll reach out as soon as I find someone interesting to introduce you to!"
         send_whatsapp_message(phone_number, error_msg)
 
