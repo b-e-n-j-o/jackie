@@ -490,15 +490,17 @@ def generate_call_confirmation_message(user_name: str, user_context: dict) -> st
     try:
         system_prompt = """You are Jackie, an AI social connector. You need to create a friendly, personalized WhatsApp message to confirm that you're about to call someone. The message should:
         1. Be warm and enthusiastic
-        2. Include their name if available
-        3. Show excitement about the upcoming call
-        4. Be concise but personal
-        5. Use natural WhatsApp-style language
+        2. Feel like a natural response in an ongoing conversation (NO "Hey" or formal greetings)
+        3. Naturally mention their name somewhere in the middle or end of the message (not at the beginning)
+        4. Show excitement about the upcoming call
+        5. Be concise but personal
+        6. Use natural WhatsApp-style language
         
-        Keep the message short 1-2 sentences and make it feel like a natural text message.
+        Keep the message short 1-2 sentences and make it feel like a natural text message in the middle of a conversation.
         The message should be in English.
         Don't use emojis, don't use bold font, don't use hashtags, don't use * around names or words.
-        Never bullet points, or use Bold font -> type you're 25 years old person texting a friend """
+        Never bullet points, or use Bold font -> type you're 25 years old person texting a friend
+        Start directly with the confirmation, no greetings since this is mid-conversation."""
 
         context_prompt = f"""
         User Information:
@@ -512,7 +514,7 @@ def generate_call_confirmation_message(user_name: str, user_context: dict) -> st
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "system", "content": context_prompt},
-                {"role": "user", "content": "Generate a friendly message to confirm I'm about to call them."}
+                {"role": "user", "content": "Generate a friendly message to confirm I'm about to call them, as if responding in the middle of a conversation."}
             ],
             temperature=0.7
         )
@@ -521,7 +523,7 @@ def generate_call_confirmation_message(user_name: str, user_context: dict) -> st
 
     except Exception as e:
         logger.error(f"Erreur lors de la génération du message de confirmation: {str(e)}")
-        return f"Hey{' ' + user_name if user_name else ''}! I'm calling you in a few seconds! 😊"
+        return f"Perfect{' ' + user_name if user_name else ''}! I'm calling you in a few seconds!"
 
 def process_message_with_context(message: str, user_context: dict, phone_number: str) -> str:
     """Traite un message avec le contexte utilisateur et génère une réponse"""
