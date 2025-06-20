@@ -1081,30 +1081,30 @@ def handle_intro_request(user_id: str, phone_number: str, user_name: str = "") -
         thread.start()
         
         # Attendre que le processus de matching et d'introduction soit terminé
-        time.sleep(5)  # Attendre 5 secondes pour que le processus soit terminé
+        time.sleep(15)  # Attendre 15 secondes pour que le processus soit terminé
         
-        # Récupérer le message d'introduction stocké depuis user_matches
-        logging.info(f"[INTRO_REQUEST] Recherche du message d'introduction pour user {user_id}")
-        match_data = supabase.table('user_matches') \
-            .select('introduction_message_for_matched') \
-            .eq('matched_user_id', user_id) \
+        # Vérifier si une introduction a été envoyée
+        logging.info(f"[INTRO_REQUEST] Vérification si une introduction a été envoyée...")
+        recent_intro_messages = supabase.table('messages') \
+            .select('content') \
+            .eq('user_id', user_id) \
+            .eq('direction', 'outgoing') \
+            .eq('tag', 'intro_sent') \
             .order('created_at', desc=True) \
             .limit(1) \
             .execute()
             
-        if not match_data.data or not match_data.data[0].get('introduction_message_for_matched'):
-            logging.error("[INTRO_REQUEST] Message d'introduction non trouvé dans la base")
-            return ""
-            
-        # Récupérer le message stocké
-        intro_message = match_data.data[0]['introduction_message_for_matched']
-        logging.info(f"[INTRO_REQUEST] Message d'introduction trouvé (premiers 100 caractères): {intro_message[:100]}...")
+        if recent_intro_messages.data:
+            logging.info(f"[INTRO_REQUEST] Introduction trouvée et déjà envoyée")
+            return ""  # Le message a déjà été envoyé directement
         
-        return intro_message
+        # Si pas de message trouvé, renvoyer un message d'attente
+        logging.info("[INTRO_REQUEST] Aucune introduction trouvée, envoi du message d'attente")
+        return "I'm looking for someone perfect for you! Give me a moment to find the best match..."
         
     except Exception as e:
         logging.error(f"[INTRO_REQUEST] Erreur lors du traitement: {str(e)}")
-        return ""
+        return "I'm looking for someone perfect for you! Give me a moment to find the best match..."
 
 def schedule_background_matching(user_id: str):
     """Déclenche un nouveau matching en arrière-plan sans notifier l'utilisateur"""
@@ -1161,57 +1161,46 @@ def trigger_matching_and_intro_for_user(user_id: str, phone_number: str, user_na
         
         if matching_response.status_code != 200:
             logging.error(f"[INTRO_REQUEST] Erreur matching: {matching_response.text}")
-            error_msg = "Sorry, I couldn't find any good matches for you right now. Please try again later!"
+            error_msg = "Sorry, I couldn't find any good matches for you right now. I'll reach out as soon as I find someone interesting to introduce you to!"
             send_whatsapp_message(phone_number, error_msg)
-            
-            # NOUVEAU: Déclencher un nouveau matching en arrière-plan pour la prochaine fois
-            logging.info(f"[INTRO_REQUEST] Déclenchement d'un nouveau matching en arrière-plan pour user {user_id}")
-            schedule_background_matching(user_id)
             return
         
         logging.info(f"[INTRO_REQUEST] Matchs calculés avec succès pour user {user_id}")
         
         # 2. Attendre que les matchs soient traités
-        logging.info(f"[INTRO_REQUEST] Attente de 5 secondes pour le traitement des matchs...")
-        time.sleep(5)
+        logging.info(f"[INTRO_REQUEST] Attente de 15 secondes pour le traitement des matchs...")
+        time.sleep(15)
         
-        # 3. Déclencher l'introduction (utiliser l'endpoint classique pour l'instant)
+        # 3. Déclencher l'introduction avec les bons paramètres
         intro_url = os.getenv("INTRODUCTION_FUNCTION_URL", "https://func-message-generation-jackie.azurewebsites.net/api") + "/generate-introduction"
         logging.info(f"[INTRO_REQUEST] Appel de l'API d'introduction: {intro_url}")
         
+        # CORRECTION: Envoyer le bon user_id (pas matched_user_id)
         intro_response = requests.post(
             intro_url,
-            json={"user_id": user_id},
+            json={"user_id": user_id},  # C'est l'utilisateur qui demande l'intro
             timeout=90
         )
         
         logging.info(f"[INTRO_REQUEST] Réponse de l'API d'introduction: {intro_response.status_code}")
-        logging.info(f"[INTRO_REQUEST] Contenu de la réponse: {intro_response.text}")
         
         if intro_response.status_code == 200:
             logging.info(f"[INTRO_REQUEST] Introduction envoyée avec succès pour user {user_id}")
             # Le message d'introduction a été envoyé directement par la fonction
+        elif intro_response.status_code == 404:
+            logging.warning(f"[INTRO_REQUEST] Aucun match disponible pour {user_id}")
+            error_msg = "Sorry, I couldn't find any good matches for you right now. I'll reach out as soon as I find someone interesting to introduce you to!"
+            send_whatsapp_message(phone_number, error_msg)
         else:
             logging.error(f"[INTRO_REQUEST] Erreur introduction: {intro_response.text}")
-            
-            # NOUVEAU: Si l'introduction échoue (aucun match disponible), déclencher un nouveau matching
-            if "Aucun match disponible" in intro_response.text or intro_response.status_code == 404:
-                logging.info(f"[INTRO_REQUEST] Aucun match disponible - déclenchement d'un nouveau matching en arrière-plan")
-                schedule_background_matching(user_id)
-            
-            error_msg = "Sorry, I couldn't find any good matches for you right now. Please try again later!"
+            error_msg = "Sorry, I couldn't find any good matches for you right now. I'll reach out as soon as I find someone interesting to introduce you to!"
             send_whatsapp_message(phone_number, error_msg)
         
     except Exception as e:
         logging.error(f"[INTRO_REQUEST] Erreur générale: {str(e)}")
         import traceback
         traceback.print_exc()
-        
-        # NOUVEAU: En cas d'erreur générale, aussi déclencher un nouveau matching
-        logging.info(f"[INTRO_REQUEST] Erreur générale - déclenchement d'un nouveau matching en arrière-plan")
-        schedule_background_matching(user_id)
-        
-        error_msg = "Sorry, I couldn't find any good matches for you right now. Please try again later!"
+        error_msg = "Sorry, I couldn't find any good matches for you right now. I'll reach out as soon as I find someone interesting to introduce you to!"
         send_whatsapp_message(phone_number, error_msg)
 
 def handle_positive_template_response(user_id: str, phone_number: str, user_context: dict, template_metadata: dict = None) -> str:
@@ -1222,49 +1211,123 @@ def handle_positive_template_response(user_id: str, phone_number: str, user_cont
         # Récupérer les informations du match depuis les métadonnées du template
         if not template_metadata:
             logging.warning("[TEMPLATE_RESPONSE] Pas de métadonnées template disponibles")
-            error_msg = "Sorry, I couldn't find any good matches for you right now. Please try again later!"
-            send_whatsapp_message(phone_number, error_msg)
-            return ""
+            # Récupérer depuis la fonction get_template_metadata
+            try:
+                intro_url = os.getenv("INTRODUCTION_FUNCTION_URL", "https://func-message-generation-jackie.azurewebsites.net/api")
+                metadata_response = requests.post(
+                    f"{intro_url}/get-template-metadata",
+                    json={"matched_user_id": user_id},
+                    timeout=30
+                )
+                
+                if metadata_response.status_code == 200:
+                    metadata_data = metadata_response.json()
+                    template_metadata = metadata_data.get("template_metadata", {})
+                    logging.info(f"[TEMPLATE_RESPONSE] Métadonnées récupérées: {template_metadata}")
+                else:
+                    logging.error(f"[TEMPLATE_RESPONSE] Erreur récupération métadonnées: {metadata_response.text}")
+                    return ""
+            except Exception as e:
+                logging.error(f"[TEMPLATE_RESPONSE] Erreur lors de la récupération des métadonnées: {str(e)}")
+                return ""
         
         # Extraire l'original_user_id depuis les métadonnées du template
         original_user_id = None
         if 'template_info' in template_metadata:
             original_user_id = template_metadata['template_info'].get('original_user_id')
             logging.info(f"[TEMPLATE_RESPONSE] Original user ID trouvé: {original_user_id}")
+        elif 'original_user_id' in template_metadata:
+            # Fallback si les métadonnées sont directement dans template_metadata
+            original_user_id = template_metadata.get('original_user_id')
+            logging.info(f"[TEMPLATE_RESPONSE] Original user ID trouvé (fallback): {original_user_id}")
         
         if not original_user_id:
             logging.error("[TEMPLATE_RESPONSE] Impossible de trouver l'utilisateur original dans les métadonnées")
-            error_msg = "Sorry, I couldn't find any good matches for you right now. Please try again later!"
-            send_whatsapp_message(phone_number, error_msg)
             return ""
         
-        # Appeler l'endpoint send-stored-introduction
-        intro_url = os.getenv("INTRODUCTION_FUNCTION_URL", "https://func-message-generation-jackie.azurewebsites.net/api") + "/send-stored-introduction"
-        logging.info(f"[TEMPLATE_RESPONSE] Appel de l'API send-stored-introduction: {intro_url}")
+        # Récupérer le message d'introduction stocké depuis user_matches
+        logging.info(f"[TEMPLATE_RESPONSE] Recherche du message d'introduction pour user_id={original_user_id} et matched_user_id={user_id}")
+        match_data = supabase.table('user_matches') \
+            .select('introduction_message_for_matched') \
+            .eq('user_id', original_user_id) \
+            .eq('matched_user_id', user_id) \
+            .order('created_at', desc=True) \
+            .limit(1) \
+            .execute()
+            
+        if not match_data.data or not match_data.data[0].get('introduction_message_for_matched'):
+            logging.error("[TEMPLATE_RESPONSE] Message d'introduction non trouvé dans la base")
+            
+            # NOUVEAU: Si pas de message stocké, utiliser l'API send-stored-introduction
+            logging.info("[TEMPLATE_RESPONSE] Tentative d'envoi via l'API send-stored-introduction")
+            try:
+                intro_url = os.getenv("INTRODUCTION_FUNCTION_URL", "https://func-message-generation-jackie.azurewebsites.net/api")
+                intro_response = requests.post(
+                    f"{intro_url}/send-stored-introduction",
+                    json={
+                        "matched_user_id": user_id,
+                        "original_user_id": original_user_id
+                    },
+                    timeout=90
+                )
+                
+                if intro_response.status_code == 200:
+                    logging.info("[TEMPLATE_RESPONSE] Introduction envoyée via l'API avec succès")
+                    response_data = intro_response.json()
+                    return "Perfect! I'll send you their profile now."
+                else:
+                    logging.error(f"[TEMPLATE_RESPONSE] Erreur API send-stored-introduction: {intro_response.text}")
+                    return ""
+            except Exception as e:
+                logging.error(f"[TEMPLATE_RESPONSE] Erreur lors de l'appel API: {str(e)}")
+                return ""
+            
+        # Récupérer le message stocké
+        intro_message = match_data.data[0]['introduction_message_for_matched']
+        logging.info(f"[TEMPLATE_RESPONSE] Message d'introduction trouvé (premiers 100 caractères): {intro_message[:100]}...")
         
-        intro_response = requests.post(
-            intro_url,
-            json={
-                "user_id": original_user_id,
-                "matched_user_id": user_id
-            },
-            timeout=90
-        )
-        
-        logging.info(f"[TEMPLATE_RESPONSE] Réponse de l'API send-stored-introduction: {intro_response.status_code}")
-        
-        if intro_response.status_code == 200:
-            logging.info(f"[TEMPLATE_RESPONSE] Introduction envoyée avec succès pour user {user_id}")
-            return "Introduction envoyée avec succès"
+        # Mettre à jour le statut du match
+        logging.info(f"[TEMPLATE_RESPONSE] Mise à jour du statut du match pour user_id={original_user_id} et matched_user_id={user_id}")
+        update_result = supabase.table('user_matches') \
+            .update({
+                "status": "introduction_sent",
+                "message_sent": True,
+                "message_sent_at": datetime.now(timezone.utc).isoformat(),
+                "metadata": {
+                    "template_info": {
+                        "awaiting_response": False,
+                        "response_received_at": datetime.now(timezone.utc).isoformat()
+                    }
+                }
+            }) \
+            .eq('user_id', original_user_id) \
+            .eq('matched_user_id', user_id) \
+            .execute()
+            
+        if update_result.data:
+            logging.info("[TEMPLATE_RESPONSE] Statut du match mis à jour avec succès")
         else:
-            logging.error(f"[TEMPLATE_RESPONSE] Erreur lors de l'envoi de l'introduction: {intro_response.text}")
-            error_msg = "Sorry, I couldn't find any good matches for you right now. Please try again later!"
-            send_whatsapp_message(phone_number, error_msg)
-            return ""
+            logging.warning("[TEMPLATE_RESPONSE] Échec de la mise à jour du statut du match")
+        
+        # Enregistrer l'introduction dans l'historique
+        try:
+            introduction_record = {
+                "user_id": original_user_id,
+                "matched_user_id": user_id,
+                "introduction_date": datetime.now(timezone.utc).isoformat(),
+                "status": "completed"
+            }
+            
+            supabase.table("introduction_history") \
+                .insert(introduction_record) \
+                .execute()
+            logging.info("[TEMPLATE_RESPONSE] Introduction enregistrée dans l'historique")
+        except Exception as e:
+            logging.error(f"[TEMPLATE_RESPONSE] Erreur enregistrement historique: {str(e)}")
+            
+        return intro_message
             
     except Exception as e:
         logging.error(f"[TEMPLATE_RESPONSE] Erreur: {str(e)}")
         logging.error(f"[TEMPLATE_RESPONSE] Traceback: {traceback.format_exc()}")
-        error_msg = "Sorry, I couldn't find any good matches for you right now. Please try again later!"
-        send_whatsapp_message(phone_number, error_msg)
         return ""
